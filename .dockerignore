@@ -1,0 +1,8 @@
+.git
+.vscode
+**/target
+**/Cargo.lock
+telemetry
+docker
+justfile
+README.md

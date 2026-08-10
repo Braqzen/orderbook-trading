@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package generatorfeed;
+
+import "google/protobuf/empty.proto";
+
+service GeneratorFeed {
+  rpc PublishPrice (stream PriceUpdate) returns (google.protobuf.Empty);
+}
+
+message PriceUpdate {
+  double value = 1;
+}

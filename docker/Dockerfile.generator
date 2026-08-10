@@ -1,0 +1,20 @@
+FROM rust:1.96-bookworm AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY proto proto
+COPY crates/generator crates/generator
+WORKDIR /app/crates/generator
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
+    --mount=type=cache,target=/app/crates/generator/target,sharing=private \
+    cargo build --release --bin generator \
+    && cp /app/crates/generator/target/release/generator /app/generator
+
+FROM debian:bookworm-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/generator /app/server
+CMD ["/app/server"]
