@@ -1,9 +1,10 @@
+use crate::trade::Order;
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
 use tokio::{select, sync::mpsc::Receiver};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 pub struct OrderBook {
     url: String,
@@ -14,7 +15,7 @@ impl OrderBook {
         Self { url }
     }
 
-    pub async fn run(&self, mut receiver: Receiver<f64>, token: CancellationToken) -> Result<()> {
+    pub async fn run(&self, mut receiver: Receiver<Order>, token: CancellationToken) -> Result<()> {
         let (mut stream, _response) = connect_async(self.url.clone()).await?;
 
         loop {
@@ -23,14 +24,24 @@ impl OrderBook {
 
                 _ = token.cancelled() => break,
 
-                price = receiver.recv() => {
-                    let Some(price) = price else {
-                        error!("Market feed channel closed");
+                order = receiver.recv() => {
+                    let Some(order) = order else {
+                        error!("Engine to orderbook api channel closed");
                         break;
                     };
 
-                    match stream.send(Message::Text(price.to_string().into())).await {
-                        Ok(()) => {},
+                    let payload = match serde_json::to_string(&order) {
+                        Ok(payload) => payload,
+                        Err(error) => {
+                            error!(%error, "Failed to serialize order");
+                            continue;
+                        }
+                    };
+
+                    match stream.send(Message::Text(payload.into())).await {
+                        Ok(()) => {
+                            info!(price = order.price, size = order.size, side = %order.side, "Order sent to orderbook");
+                        },
                         Err(error) => {
                             error!(%error, "Failed to send order to orderbook");
                             break;

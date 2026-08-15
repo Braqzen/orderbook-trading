@@ -80,6 +80,8 @@ impl Worker {
 
         sender.send(PriceUpdate { value: price.value }).await?;
 
+        info!(price = price.value, "Sent price");
+
         Ok(())
     }
 }

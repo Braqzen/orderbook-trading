@@ -1,8 +1,6 @@
-use crate::{
-    api::{MarketFeed, OrderBook},
-    trade::Engine,
-};
+use crate::{engine::Engine, websocket::WsServer};
 use eyre::Result;
+use std::net::SocketAddr;
 use tokio::{
     select,
     signal::unix::{SignalKind, signal},
@@ -13,13 +11,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 pub struct Worker {
-    market: String,
-    orderbook: String,
+    ws: SocketAddr,
 }
 
 impl Worker {
-    pub fn new(market: String, orderbook: String) -> Self {
-        Self { market, orderbook }
+    pub fn new(ws: SocketAddr) -> Self {
+        Self { ws }
     }
 
     pub async fn run(&self) -> Result<()> {
@@ -29,32 +26,25 @@ impl Worker {
         let mut sigterm = signal(SignalKind::terminate())?;
 
         let token = CancellationToken::new();
-        let feed_token = token.child_token();
-        let book_token = token.child_token();
+        let ws_token = token.child_token();
         let engine_token = token.child_token();
-        let feed_guard = token.clone().drop_guard();
-        let book_guard = token.clone().drop_guard();
+        let ws_guard = token.clone().drop_guard();
         let engine_guard = token.clone().drop_guard();
 
-        let market_feed = MarketFeed::new(self.market.clone());
-        let orderbook = OrderBook::new(self.orderbook.clone());
-        let engine = Engine::new();
-        let (feed_sender, feed_receiver) = mpsc::channel(128);
+        let ws_server = WsServer::new();
+        let mut engine = Engine::new();
         let (order_sender, order_receiver) = mpsc::channel(128);
 
         let mut tasks = JoinSet::new();
+        let ws = self.ws.clone();
 
         tasks.spawn(async move {
+            let _guard = ws_guard;
+            ws_server.run(order_sender, ws, ws_token).await
+        });
+        tasks.spawn(async move {
             let _guard = engine_guard;
-            engine.run(feed_receiver, order_sender, engine_token).await
-        });
-        tasks.spawn(async move {
-            let _guard = book_guard;
-            orderbook.run(order_receiver, book_token).await
-        });
-        tasks.spawn(async move {
-            let _guard = feed_guard;
-            market_feed.run(feed_sender, feed_token).await
+            engine.run(order_receiver, engine_token).await
         });
 
         select! {

@@ -1,0 +1,17 @@
+FROM rust:1.96-bookworm AS builder
+WORKDIR /app
+COPY crates/orderbook crates/orderbook
+WORKDIR /app/crates/orderbook
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
+    --mount=type=cache,target=/app/crates/orderbook/target,sharing=private \
+    cargo build --release --bin orderbook \
+    && cp /app/crates/orderbook/target/release/orderbook /app/orderbook
+
+FROM debian:bookworm-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/orderbook /app/orderbook
+CMD ["/app/orderbook"]

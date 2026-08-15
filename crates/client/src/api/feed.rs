@@ -3,7 +3,7 @@ use futures_util::StreamExt;
 use tokio::{select, sync::mpsc::Sender};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 pub struct MarketFeed {
     url: String,
@@ -31,6 +31,7 @@ impl MarketFeed {
                                 continue
                             };
 
+                            info!(%price, "Price update");
                             if sender.send(price).await.is_err() {
                                 error!("Failed to send price through channel");
                                 break;

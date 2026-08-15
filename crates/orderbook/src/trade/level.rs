@@ -1,4 +1,4 @@
-use crate::order::Order;
+use crate::trade::order::Order;
 
 pub struct PriceLevel {
     orders: Vec<Order>,

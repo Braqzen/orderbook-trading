@@ -122,10 +122,9 @@ impl GeneratorFeed for MyGeneratorFeed {
         loop {
             match prices.message().await {
                 Ok(Some(price)) => {
+                    info!(price = price.value, "Price update");
                     *self.state.current_price.write().await = price.value;
                     let _ = self.state.broadcast.send(price.value);
-                    // TODO: remove printing
-                    println!("{}", price.value);
                 }
                 Ok(None) => return Ok(Response::new(())),
                 Err(error) => return Err(error),

@@ -1,8 +1,9 @@
 mod api;
 mod worker;
 
-use eyre::Result;
-use maiya::telemetry::Telemetry;
+use eyre::{Result, eyre};
+use maiya::logs::Logger;
+use opentelemetry_sdk::Resource;
 use std::{net::SocketAddr, str::FromStr};
 use worker::Worker;
 
@@ -12,7 +13,8 @@ pub mod proto {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // let telemetry = Telemetry::init("market-feed")?;
+    let resource = Resource::builder().with_service_name("market-feed").build();
+    let logger = Logger::new(&resource, "market-feed").map_err(|error| eyre!("{error}"))?;
 
     let ws = std::env::var("WS")?;
     let socket = std::env::var("SOCKET")?;
@@ -23,7 +25,7 @@ async fn main() -> Result<()> {
     let mut worker = Worker::new(socket, ws);
     let result = worker.run().await;
 
-    // telemetry.shutdown()?;
+    logger.shutdown().map_err(|error| eyre!("{error}"))?;
 
     result
 }

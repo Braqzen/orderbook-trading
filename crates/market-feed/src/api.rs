@@ -9,7 +9,7 @@ use tokio::{
 };
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 pub async fn websocket(tx: Sender<f64>, ws: SocketAddr, token: CancellationToken) -> Result<()> {
     let listener = TcpListener::bind(ws).await?;
@@ -28,7 +28,7 @@ pub async fn websocket(tx: Sender<f64>, ws: SocketAddr, token: CancellationToken
             }
 
             accepted = listener.accept() => {
-                let (stream, _) = match accepted {
+                let (stream, peer) = match accepted {
                     Ok(value) => value,
                     Err(error) => {
                         error!(%error, "Failed to accept WebSocket connection");
@@ -71,6 +71,7 @@ pub async fn websocket(tx: Sender<f64>, ws: SocketAddr, token: CancellationToken
                             price = rx.recv() => {
                                 match price {
                                     Ok(price) => {
+                                        info!(%peer, price, "Sending price");
                                         if let Err(error) = sender
                                             .send(Message::Text(price.to_string().into()))
                                             .await

@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 eyre = "0.6.12"
 maiya = { git = "https://github.com/Braqzen/maiya.git", tag = "v0.1.0" }
+opentelemetry_sdk = "0.32.0"
 prost = "0.14.4"
 tonic = "0.14.6"
 tonic-prost = "0.14.6"
