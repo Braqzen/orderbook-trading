@@ -1,3 +1,4 @@
+mod api;
 mod worker;
 
 use eyre::Result;
@@ -11,12 +12,15 @@ pub mod proto {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // let telemetry = Telemetry::init("generator")?;
+    // let telemetry = Telemetry::init("market-feed")?;
 
+    let ws = std::env::var("WS")?;
     let socket = std::env::var("SOCKET")?;
+
+    let ws = SocketAddr::from_str(&ws)?;
     let socket = SocketAddr::from_str(&socket)?;
 
-    let mut worker = Worker::new(socket);
+    let mut worker = Worker::new(socket, ws);
     let result = worker.run().await;
 
     // telemetry.shutdown()?;

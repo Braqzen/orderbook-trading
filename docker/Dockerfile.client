@@ -1,0 +1,17 @@
+FROM rust:1.96-bookworm AS builder
+WORKDIR /app
+COPY crates/client crates/client
+WORKDIR /app/crates/client
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
+    --mount=type=cache,target=/app/crates/client/target,sharing=private \
+    cargo build --release --bin client \
+    && cp /app/crates/client/target/release/client /app/client
+
+FROM debian:bookworm-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/client /app/client
+CMD ["/app/client"]

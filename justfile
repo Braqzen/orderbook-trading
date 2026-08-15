@@ -1,4 +1,4 @@
-default: build-generator build-market-feed
+default: build-generator build-market-feed build-client
 
 # Rust
 build-generator:
@@ -6,6 +6,9 @@ build-generator:
 
 build-market-feed:
 	docker buildx bake --load -f docker/build.hcl market-feed
+
+build-client:
+	docker buildx bake --load -f docker/build.hcl client
 
 # Docker Compose Commands
 run:
