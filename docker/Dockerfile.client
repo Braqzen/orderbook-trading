@@ -1,12 +1,23 @@
-FROM rust:1.96-bookworm AS builder
+FROM rust:1.96-bookworm AS chef
+RUN cargo install cargo-chef --version 0.1.77
 WORKDIR /app
-COPY crates/client crates/client
-WORKDIR /app/crates/client
+
+FROM chef AS planner
+COPY Cargo.toml Cargo.toml
+COPY crates crates
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
-    --mount=type=cache,target=/app/crates/client/target,sharing=private \
-    cargo build --release --bin client \
-    && cp /app/crates/client/target/release/client /app/client
+    cargo chef cook --release --package client --recipe-path recipe.json
+COPY Cargo.toml Cargo.toml
+COPY crates/client crates/client
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
+    cargo build --release -p client \
+    && cp /app/target/release/client /app/client
 
 FROM debian:bookworm-slim
 WORKDIR /app

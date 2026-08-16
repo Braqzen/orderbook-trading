@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/client", 
+    "crates/generator", 
+    "crates/market-feed", 
+    "crates/orderbook", 
+]
+
+[workspace.dependencies]
+eyre = "0.6.12"
+futures-util = "=0.3.33"
+maiya = { git = "https://github.com/Braqzen/maiya.git", tag = "v0.1.0" }
+opentelemetry_sdk = "0.32.0"
+prost = "0.14.4"
+rand = "0.10.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.151"
+tonic = "0.14.6"
+tonic-prost = "0.14.6"
+tonic-prost-build = "0.14.6"
+tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "signal"] }
+tokio-stream = "0.1.19"
+tokio-util = "0.7.19"
+tokio-tungstenite = "0.30.0"
+tracing = "0.1"

@@ -1,15 +1,26 @@
-FROM rust:1.96-bookworm AS builder
+FROM rust:1.96-bookworm AS chef
+RUN cargo install cargo-chef --version 0.1.77
+WORKDIR /app
+
+FROM chef AS planner
+COPY Cargo.toml Cargo.toml
+COPY crates crates
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev \
     && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-COPY proto proto
-COPY crates/generator crates/generator
-WORKDIR /app/crates/generator
+COPY --from=planner /app/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
-    --mount=type=cache,target=/app/crates/generator/target,sharing=private \
-    cargo build --release --bin generator \
-    && cp /app/crates/generator/target/release/generator /app/generator
+    cargo chef cook --release --package generator --recipe-path recipe.json
+COPY Cargo.toml Cargo.toml
+COPY proto proto
+COPY crates/generator crates/generator
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
+    cargo build --release -p generator \
+    && cp /app/target/release/generator /app/generator
 
 FROM debian:bookworm-slim
 WORKDIR /app

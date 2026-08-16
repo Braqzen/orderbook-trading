@@ -4,18 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eyre = "0.6.12"
-maiya = { git = "https://github.com/Braqzen/maiya.git", tag = "v0.1.0" }
-opentelemetry_sdk = "0.32.0"
-prost = "0.14.4"
-tonic = "0.14.6"
-tonic-prost = "0.14.6"
-tokio = { version = "1.48.0", features = ["rt-multi-thread", "macros", "signal"] }
-tracing = "0.1"
-tokio-stream = "0.1.19"
-tokio-util = "0.7.19"
-tokio-tungstenite = "0.30.0"
-futures-util = "=0.3.33"
+eyre.workspace = true
+futures-util.workspace = true
+maiya.workspace = true
+opentelemetry_sdk.workspace = true
+prost.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tokio-tungstenite.workspace = true
+tracing.workspace = true
 
 [build-dependencies]
-tonic-prost-build = "0.14.6"
+tonic-prost-build.workspace = true
