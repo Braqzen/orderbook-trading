@@ -2,7 +2,7 @@ use crate::trade::{Order, OrderType, Price};
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, num::NonZeroU64};
 use tokio::{
     net::TcpListener,
     select,
@@ -137,6 +137,6 @@ fn log_connection_result(result: std::result::Result<Result<()>, JoinError>) {
 #[derive(Deserialize)]
 struct ApiOrder {
     price: f64,
-    size: u64,
+    size: NonZeroU64,
     side: OrderType,
 }
