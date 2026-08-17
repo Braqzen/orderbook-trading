@@ -1,8 +1,8 @@
-use crate::trade::{Order, OrderBook, Price};
+use crate::trade::{ExecutionResult, Order, OrderBook, Price};
 use eyre::Result;
 use tokio::{select, sync::mpsc::Receiver};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 pub struct Engine {
     book: OrderBook,
@@ -32,14 +32,31 @@ impl Engine {
                         break;
                     };
 
-                    match self.book.add_order(price, order) {
-                        Ok(()) => {
-                            info!(%price, size = order.size, side = %order.side, "New order")
+                    let trades = self.book.trade(price, order);
+
+                    let (status, fill_count, remaining_size) = match trades {
+                        ExecutionResult::Filled { fills } => {
+                            ("filled", fills.len(), 0)
                         },
-                        Err(error) => {
-                            warn!(%error, "Failed to add order")
-                        }
-                    }
+                        ExecutionResult::PartiallyFilled { fills, remainder } => {
+                            ("partial", fills.len(), remainder.size)
+                        },
+                        ExecutionResult::Unfilled { .. } => {
+                            ("unfilled", 0, order.size)
+                        },
+                    };
+                    let filled_size = order.size - remaining_size;
+
+                    info!(
+                        limit_price = %price,
+                        requested_size = order.size,
+                        filled_size,
+                        remaining_size,
+                        fill_count,
+                        side = %order.side,
+                        status,
+                        "Order processed"
+                    );
                 }
             }
         }

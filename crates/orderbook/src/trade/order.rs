@@ -1,5 +1,8 @@
 use serde::Deserialize;
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    num::NonZeroU64,
+};
 
 #[derive(Clone, Copy)]
 pub struct Order {
@@ -8,8 +11,15 @@ pub struct Order {
 }
 
 impl Order {
-    pub fn new(size: u64, side: OrderType) -> Self {
-        Self { size, side }
+    pub fn new(size: NonZeroU64, side: OrderType) -> Self {
+        Self {
+            size: size.get(),
+            side,
+        }
+    }
+
+    pub fn filled(&self) -> bool {
+        self.size == 0
     }
 }
 

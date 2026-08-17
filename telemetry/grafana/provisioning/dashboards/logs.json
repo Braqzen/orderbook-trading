@@ -18,6 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 1,
   "links": [],
   "panels": [
     {
@@ -56,7 +57,7 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"orderbook\"} |= `New order` | line_format \"New order: {{.side}} {{.size}} @ ${{.price}}\"",
+          "expr": "{service_name=\"orderbook\"} |= `Order processed` | line_format \"Processed: {{.side}} {{.status}} {{.requested_size}} @ ${{.limit_price}} | requested_size: {{.requested_size}} remaining_size: {{.remaining_size}} filled_size: {{.filled_size}} fill_count: {{.fill_count}}\"",
           "hide": false,
           "queryType": "range",
           "refId": "A"
@@ -68,7 +69,7 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"orderbook\"} != `New order`",
+          "expr": "{service_name=\"orderbook\"} != `Order processed`",
           "hide": false,
           "queryType": "range",
           "refId": "B"
@@ -227,5 +228,6 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "Logs",
-  "version": 0
+  "uid": "08886652-8347-4091-886b-f450a94c88ce",
+  "version": 1
 }
