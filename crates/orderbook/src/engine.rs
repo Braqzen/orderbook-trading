@@ -55,6 +55,8 @@ impl Engine {
                         fill_count,
                         side = %order.side,
                         status,
+                        client=%order.client_id,
+                        order=%order.order_id,
                         "Order processed"
                     );
                 }

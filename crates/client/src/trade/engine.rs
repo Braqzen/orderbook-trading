@@ -1,4 +1,4 @@
-use super::{Order, OrderType};
+use crate::trade::{Order, OrderType};
 use eyre::Result;
 use tokio::{
     select,
@@ -6,12 +6,15 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+use uuid::Uuid;
 
-pub struct Engine;
+pub struct Engine {
+    id: Uuid,
+}
 
 impl Engine {
     pub fn new() -> Self {
-        Self
+        Self { id: Uuid::new_v4() }
     }
 
     pub async fn run(
@@ -38,10 +41,11 @@ impl Engine {
                         OrderType::Sell
                     };
                     let size = rand::random_range(1..5);
+                    let order_id = Uuid::new_v4();
 
-                    let order = Order::new(price, size, side);
+                    let order = Order::new(price, size, side, self.id, order_id);
 
-                    info!(price, size, %side, "Created order");
+                    info!(price, size, %side, client=%self.id, order=%order_id, "Created order");
 
                     if sender.send(order).await.is_err() {
                         error!("Order channel closed");

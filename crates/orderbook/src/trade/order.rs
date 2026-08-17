@@ -3,18 +3,23 @@ use std::{
     fmt::{self, Display, Formatter},
     num::NonZeroU64,
 };
+use uuid::Uuid;
 
 #[derive(Clone, Copy)]
 pub struct Order {
     pub size: u64,
     pub side: OrderType,
+    pub client_id: Uuid,
+    pub order_id: Uuid,
 }
 
 impl Order {
-    pub fn new(size: NonZeroU64, side: OrderType) -> Self {
+    pub fn new(size: NonZeroU64, side: OrderType, client_id: Uuid, order_id: Uuid) -> Self {
         Self {
             size: size.get(),
             side,
+            client_id,
+            order_id,
         }
     }
 

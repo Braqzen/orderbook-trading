@@ -12,6 +12,7 @@ use tokio::{
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
+use uuid::Uuid;
 
 pub struct WsServer;
 
@@ -88,7 +89,7 @@ impl WsServer {
                                                     continue;
                                                 }
                                             };
-                                            let order = Order::new(order.size, order.side);
+                                            let order = Order::new(order.size, order.side, order.client_id, order.order_id);
 
                                             if tx.send((price, order)).await.is_err() {
                                                 error!("Order channel closed");
@@ -139,4 +140,6 @@ struct ApiOrder {
     price: f64,
     size: NonZeroU64,
     side: OrderType,
+    client_id: Uuid,
+    order_id: Uuid,
 }

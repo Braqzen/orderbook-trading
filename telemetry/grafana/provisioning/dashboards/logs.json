@@ -57,7 +57,7 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"orderbook\"} |= `Order processed` | line_format \"Processed: {{.side}} {{.status}} {{.requested_size}} @ ${{.limit_price}} | requested_size: {{.requested_size}} remaining_size: {{.remaining_size}} filled_size: {{.filled_size}} fill_count: {{.fill_count}}\"",
+          "expr": "{service_name=\"orderbook\"} |= `Order processed` | line_format \"Processed: {{.side}} {{.status}} {{.requested_size}} @ ${{.limit_price}} | requested_size: {{.requested_size}} remaining_size: {{.remaining_size}} filled_size: {{.filled_size}} fill_count: {{.fill_count}} | client: {{.client}} | order: {{.order}}\"",
           "hide": false,
           "queryType": "range",
           "refId": "A"
