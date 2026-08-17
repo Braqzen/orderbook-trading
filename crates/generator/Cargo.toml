@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 eyre.workspace = true
 maiya.workspace = true
-opentelemetry_sdk.workspace = true
 prost.workspace = true
 rand.workspace = true
 serde.workspace = true

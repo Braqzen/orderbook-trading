@@ -7,7 +7,6 @@ edition = "2024"
 eyre.workspace = true
 futures-util.workspace = true
 maiya.workspace = true
-opentelemetry_sdk.workspace = true
 prost.workspace = true
 tonic.workspace = true
 tonic-prost.workspace = true

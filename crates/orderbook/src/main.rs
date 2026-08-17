@@ -3,16 +3,15 @@ mod trade;
 mod websocket;
 mod worker;
 
-use eyre::{Result, eyre};
-use maiya::logs::Logger;
-use opentelemetry_sdk::Resource;
+use eyre::Result;
+use maiya::{Resource, logs::Logger};
 use std::{net::SocketAddr, str::FromStr};
 use worker::Worker;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let resource = Resource::builder().with_service_name("orderbook").build();
-    let logger = Logger::new(&resource, "orderbook").map_err(|error| eyre!("{error}"))?;
+    let logger = Logger::new(&resource, "orderbook")?;
 
     let ws = std::env::var("WS")?;
     let ws = SocketAddr::from_str(&ws)?;
@@ -20,7 +19,7 @@ async fn main() -> Result<()> {
     let worker = Worker::new(ws);
     let result = worker.run().await;
 
-    logger.shutdown().map_err(|error| eyre!("{error}"))?;
+    logger.shutdown()?;
 
     result
 }
