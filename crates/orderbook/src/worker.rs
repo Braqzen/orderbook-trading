@@ -19,7 +19,7 @@ impl Worker {
         Self { ws }
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(&self, instrument: String) -> Result<()> {
         // Handle running locally and interrupting the process with ctrl+c.
         let mut sigint = signal(SignalKind::interrupt())?;
         // Handle running in a container and terminating the process with docker stop.
@@ -31,16 +31,15 @@ impl Worker {
         let ws_guard = token.clone().drop_guard();
         let engine_guard = token.clone().drop_guard();
 
-        let ws_server = WsServer::new();
-        let mut engine = Engine::new();
         let (order_sender, order_receiver) = mpsc::channel(128);
+        let ws_server = WsServer::new(self.ws, order_sender);
+        let mut engine = Engine::new(instrument);
 
         let mut tasks = JoinSet::new();
-        let ws = self.ws.clone();
 
         tasks.spawn(async move {
             let _guard = ws_guard;
-            ws_server.run(order_sender, ws, ws_token).await
+            ws_server.run(ws_token).await
         });
         tasks.spawn(async move {
             let _guard = engine_guard;

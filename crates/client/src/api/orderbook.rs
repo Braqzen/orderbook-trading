@@ -1,10 +1,12 @@
 use crate::trade::Order;
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
+use serde::Deserialize;
 use tokio::{select, sync::mpsc::Receiver};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 pub struct OrderBook {
     url: String,
@@ -51,6 +53,42 @@ impl OrderBook {
 
                 message = stream.next() => {
                     match message {
+                        Some(Ok(Message::Text(payload))) => {
+                            let response = match serde_json::from_str::<OrderResponse>(&payload) {
+                                Ok(response) => response,
+                                Err(error) => {
+                                    warn!(%error, "Received invalid order response");
+                                    continue;
+                                }
+                            };
+
+                            match response {
+                                OrderResponse::Rejected { order_id, reason } => {
+                                    warn!(order = %order_id, %reason, "Order rejected");
+                                }
+                                OrderResponse::Unfilled { order_id } => {
+                                    info!(order = %order_id, "Order accepted without fills");
+                                }
+                                OrderResponse::PartiallyFilled {
+                                    order_id,
+                                    filled_size,
+                                    remaining_size,
+                                } => {
+                                    info!(
+                                        order = %order_id,
+                                        filled_size,
+                                        remaining_size,
+                                        "Order partially filled"
+                                    );
+                                }
+                                OrderResponse::Filled {
+                                    order_id,
+                                    filled_size,
+                                } => {
+                                    info!(order = %order_id, filled_size, "Order filled");
+                                }
+                            }
+                        }
                         Some(Ok(Message::Close(_))) => {
                             error!("Orderbook service explicitly closed connection");
                             break;
@@ -77,4 +115,25 @@ impl OrderBook {
 
         Ok(())
     }
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum OrderResponse {
+    Rejected {
+        order_id: Uuid,
+        reason: String,
+    },
+    Unfilled {
+        order_id: Uuid,
+    },
+    PartiallyFilled {
+        order_id: Uuid,
+        filled_size: u64,
+        remaining_size: u64,
+    },
+    Filled {
+        order_id: Uuid,
+        filled_size: u64,
+    },
 }

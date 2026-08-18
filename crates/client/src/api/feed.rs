@@ -1,5 +1,6 @@
 use eyre::Result;
 use futures_util::StreamExt;
+use serde::Deserialize;
 use tokio::{select, sync::mpsc::Sender};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
@@ -14,7 +15,7 @@ impl MarketFeed {
         Self { url }
     }
 
-    pub async fn run(&self, sender: Sender<f64>, token: CancellationToken) -> Result<()> {
+    pub async fn run(&self, sender: Sender<(String, f64)>, token: CancellationToken) -> Result<()> {
         let (mut stream, _response) = connect_async(self.url.clone()).await?;
 
         loop {
@@ -26,13 +27,17 @@ impl MarketFeed {
                 message = stream.next() => {
                     match message {
                         Some(Ok(Message::Text(text))) => {
-                            let Ok(price) = text.parse::<f64>() else {
-                                warn!(%text, "Failed to parse request as f64");
-                                continue
+                            let price = match serde_json::from_str::<PriceUpdate>(text.as_str()) {
+                                Ok(price) => price,
+                                Err(error) => {
+                                    warn!(%error, %text, "Failed to parse price update");
+                                    continue;
+                                }
                             };
 
-                            info!(%price, "Price update");
-                            if sender.send(price).await.is_err() {
+                            info!(instrument = %price.instrument, price = price.value, "Price update");
+
+                            if sender.send((price.instrument, price.value)).await.is_err() {
                                 error!("Failed to send price through channel");
                                 break;
                             }
@@ -63,4 +68,10 @@ impl MarketFeed {
 
         Ok(())
     }
+}
+
+#[derive(Deserialize)]
+struct PriceUpdate {
+    instrument: String,
+    value: f64,
 }

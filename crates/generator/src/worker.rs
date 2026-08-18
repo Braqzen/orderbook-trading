@@ -1,5 +1,5 @@
 use crate::{
-    price::PriceManager,
+    price::{Price, PriceManager},
     proto::{PriceUpdate, generator_feed_client::GeneratorFeedClient},
 };
 use eyre::Result;
@@ -12,20 +12,27 @@ use tokio::{
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, info};
 
+/// Time between sending a new price (milli seconds)
 const SLEEP: u64 = 10;
 
 pub struct Worker {
     sleep: u64,
-    api: String,
+    market_feed_url: String,
     price_manager: PriceManager,
 }
 
 impl Worker {
-    pub fn new(api: String, start_price: f64, upper_limit: f64, lower_limit: f64) -> Self {
+    pub fn new(
+        market_feed_url: String,
+        instrument: String,
+        start_price: f64,
+        upper_limit: f64,
+        lower_limit: f64,
+    ) -> Self {
         Self {
-            api,
+            market_feed_url,
             sleep: SLEEP,
-            price_manager: PriceManager::new(start_price, upper_limit, lower_limit),
+            price_manager: PriceManager::new(instrument, start_price, upper_limit, lower_limit),
         }
     }
 
@@ -44,14 +51,13 @@ impl Worker {
         tokio::pin!(shutdown);
 
         let (sender, receiver) = mpsc::channel(128);
-        let mut client = GeneratorFeedClient::connect(self.api.clone()).await?;
+        let mut client = GeneratorFeedClient::connect(self.market_feed_url.clone()).await?;
         let publish = client.publish_price(ReceiverStream::new(receiver));
         tokio::pin!(publish);
 
         loop {
-            // Ignore error try again
             if let Err(error) = self.send_request(&sender).await {
-                error!(%error, "failed to queue price");
+                error!(%error, "Failed to send price");
             }
 
             tokio::select! {
@@ -76,11 +82,16 @@ impl Worker {
     }
 
     async fn send_request(&mut self, sender: &Sender<PriceUpdate>) -> Result<()> {
-        let price = self.price_manager.next_price();
+        let Price { instrument, value } = self.price_manager.next_price();
 
-        sender.send(PriceUpdate { value: price.value }).await?;
+        sender
+            .send(PriceUpdate {
+                instrument: instrument.clone(),
+                value,
+            })
+            .await?;
 
-        info!(price = price.value, "Sent price");
+        info!(instrument, price = value, "Sent price");
 
         Ok(())
     }

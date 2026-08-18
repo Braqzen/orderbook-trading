@@ -14,10 +14,11 @@ async fn main() -> Result<()> {
     let logger = Logger::new(&resource, "orderbook")?;
 
     let ws = std::env::var("WS")?;
+    let instrument = std::env::var("INSTRUMENT")?;
     let ws = SocketAddr::from_str(&ws)?;
 
     let worker = Worker::new(ws);
-    let result = worker.run().await;
+    let result = worker.run(instrument).await;
 
     logger.shutdown()?;
 

@@ -17,6 +17,3 @@ tracing.workspace = true
 
 [build-dependencies]
 tonic-prost-build.workspace = true
-
-[profile.release]
-debug = 1

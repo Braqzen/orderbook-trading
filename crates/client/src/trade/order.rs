@@ -2,18 +2,27 @@ use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 use uuid::Uuid;
 
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Clone)]
 pub struct Order {
     pub client_id: Uuid,
     pub order_id: Uuid,
+    pub instrument: String,
     pub price: f64,
     pub size: u64,
     pub side: OrderType,
 }
 
 impl Order {
-    pub fn new(price: f64, size: u64, side: OrderType, client_id: Uuid, order_id: Uuid) -> Self {
+    pub fn new(
+        instrument: String,
+        price: f64,
+        size: u64,
+        side: OrderType,
+        client_id: Uuid,
+        order_id: Uuid,
+    ) -> Self {
         Self {
+            instrument,
             price,
             size,
             side,

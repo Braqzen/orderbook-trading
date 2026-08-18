@@ -19,7 +19,7 @@ impl Engine {
 
     pub async fn run(
         &self,
-        mut receiver: Receiver<f64>,
+        mut receiver: Receiver<(String, f64)>,
         sender: Sender<Order>,
         token: CancellationToken,
     ) -> Result<()> {
@@ -30,7 +30,7 @@ impl Engine {
                 _ = token.cancelled() => break,
 
                 price = receiver.recv() => {
-                    let Some(price) = price else {
+                    let Some((instrument, value)) = price else {
                         error!("Market feed channel closed");
                         break;
                     };
@@ -43,9 +43,9 @@ impl Engine {
                     let size = rand::random_range(1..5);
                     let order_id = Uuid::new_v4();
 
-                    let order = Order::new(price, size, side, self.id, order_id);
+                    let order = Order::new(instrument.clone(), value, size, side, self.id, order_id);
 
-                    info!(price, size, %side, client=%self.id, order=%order_id, "Created order");
+                    info!(instrument, value, size, %side, client=%self.id, order=%order_id, "Created order");
 
                     if sender.send(order).await.is_err() {
                         error!("Order channel closed");

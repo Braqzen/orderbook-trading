@@ -9,6 +9,7 @@ services:
     image: orderbook-trading-generator:latest
     environment:
       RUST_LOG: info
+      INSTRUMENT: "ETH-USD"
       START_PRICE: 3100.0
       UPPER_LIMIT: 3800.0
       LOWER_LIMIT: 1900.0
@@ -53,6 +54,7 @@ services:
     image: orderbook-trading-orderbook:latest
     environment:
       RUST_LOG: info
+      INSTRUMENT: "ETH-USD"
       WS: 0.0.0.0:8002
       <<: *common-env-telemetry
     depends_on:

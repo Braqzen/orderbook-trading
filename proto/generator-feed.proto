@@ -9,5 +9,6 @@ service GeneratorFeed {
 }
 
 message PriceUpdate {
-  double value = 1;
+  string instrument = 1;
+  double value = 2;
 }

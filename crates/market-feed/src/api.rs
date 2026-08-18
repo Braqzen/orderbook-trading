@@ -1,3 +1,4 @@
+use crate::proto::PriceUpdate;
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
@@ -11,101 +12,125 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-pub async fn websocket(tx: Sender<f64>, ws: SocketAddr, token: CancellationToken) -> Result<()> {
-    let listener = TcpListener::bind(ws).await?;
-    let mut connections = JoinSet::new();
+pub struct WsServer {
+    socket: SocketAddr,
+    price_channel: Sender<PriceUpdate>,
+}
 
-    loop {
-        select! {
-            biased;
-
-            _ = token.cancelled() => break,
-
-            result = connections.join_next(), if !connections.is_empty() => {
-                if let Some(result) = result {
-                    log_connection_result(result);
-                }
-            }
-
-            accepted = listener.accept() => {
-                let (stream, peer) = match accepted {
-                    Ok(value) => value,
-                    Err(error) => {
-                        error!(%error, "Failed to accept WebSocket connection");
-                        continue;
-                    }
-                };
-
-                let tx = tx.clone();
-                let connection_token = token.child_token();
-
-                connections.spawn(async move {
-                    let ws = match accept_async(stream).await {
-                        Ok(ws) => ws,
-                        Err(error) => {
-                            error!(%error, "WebSocket handshake failed");
-                            return Ok(());
-                        }
-                    };
-
-                    let (mut sender, mut receiver) = ws.split();
-                    let mut rx = tx.subscribe();
-
-                    loop {
-                        select! {
-                            biased;
-
-                            _ = connection_token.cancelled() => break,
-
-                            message = receiver.next() => {
-                                match message {
-                                    Some(Ok(Message::Close(_))) | None => break,
-                                    Some(Err(error)) => {
-                                        error!(%error, "WebSocket connection failed");
-                                        break;
-                                    }
-                                    _ => {}
-                                }
-                            }
-
-                            price = rx.recv() => {
-                                match price {
-                                    Ok(price) => {
-                                        info!(%peer, price, "Sending price");
-                                        if let Err(error) = sender
-                                            .send(Message::Text(price.to_string().into()))
-                                            .await
-                                        {
-                                            error!(%error, "Failed to send price");
-                                            break;
-                                        }
-                                    }
-                                    Err(RecvError::Lagged(skipped)) => {
-                                        warn!(skipped, "WebSocket client lagged");
-                                    }
-                                    Err(RecvError::Closed) => break,
-                                }
-                            }
-                        }
-                    }
-
-                    if let Err(error) = sender.close().await {
-                        error!(%error, "Failed to close WebSocket connection");
-                    }
-
-                    Ok(())
-                });
-            }
+impl WsServer {
+    pub fn new(socket: SocketAddr, price_channel: Sender<PriceUpdate>) -> Self {
+        Self {
+            socket,
+            price_channel,
         }
     }
 
-    token.cancel();
+    pub async fn run(&self, token: CancellationToken) -> Result<()> {
+        let listener = TcpListener::bind(self.socket).await?;
+        let mut connections = JoinSet::new();
 
-    while let Some(result) = connections.join_next().await {
-        log_connection_result(result);
+        loop {
+            select! {
+                biased;
+
+                _ = token.cancelled() => break,
+
+                result = connections.join_next(), if !connections.is_empty() => {
+                    if let Some(result) = result {
+                        log_connection_result(result);
+                    }
+                }
+
+                accepted = listener.accept() => {
+                    let (stream, peer) = match accepted {
+                        Ok(value) => value,
+                        Err(error) => {
+                            error!(%error, "Failed to accept WebSocket connection");
+                            continue;
+                        }
+                    };
+
+                    let price_channel = self.price_channel.clone();
+                    let connection_token = token.child_token();
+
+                    connections.spawn(async move {
+                        let mut ws = match accept_async(stream).await {
+                            Ok(ws) => ws,
+                            Err(error) => {
+                                error!(%error, "WebSocket handshake failed");
+                                return Ok(());
+                            }
+                        };
+
+                        let mut price_receiver = price_channel.subscribe();
+
+                        loop {
+                            select! {
+                                biased;
+
+                                _ = connection_token.cancelled() => break,
+
+                                message = ws.next() => {
+                                    match message {
+                                        Some(Ok(Message::Close(_))) | None => break,
+                                        Some(Err(error)) => {
+                                            error!(%error, "WebSocket connection failed");
+                                            break;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+
+                                price_update = price_receiver.recv() => {
+                                    match price_update {
+                                        Ok(price_update) => {
+                                            info!(
+                                                %peer,
+                                                instrument = price_update.instrument,
+                                                price = price_update.value,
+                                                "Sending price"
+                                            );
+
+                                            let payload = serde_json::json!({
+                                                "instrument": price_update.instrument,
+                                                "value": price_update.value,
+                                            });
+
+                                            if let Err(error) = ws
+                                                .send(Message::Text(payload.to_string().into()))
+                                                .await
+                                            {
+                                                error!(%error, "Failed to send price");
+                                                break;
+                                            }
+                                        }
+                                        Err(RecvError::Lagged(skipped)) => {
+                                            warn!(skipped, "WebSocket client lagged");
+                                        }
+                                        Err(RecvError::Closed) => break,
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Err(error) = ws.close(None).await {
+                            error!(%error, "Failed to close WebSocket connection");
+                        }
+
+                        Ok(())
+                    });
+                }
+            }
+        }
+
+        token.cancel();
+
+        while let Some(result) = connections.join_next().await {
+            log_connection_result(result);
+        }
+
+        Ok(())
     }
-
-    Ok(())
 }
 
 fn log_connection_result(result: std::result::Result<Result<()>, JoinError>) {
