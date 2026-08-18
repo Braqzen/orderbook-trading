@@ -1,17 +1,20 @@
 use rand::{random_bool, random_range};
 use serde::{Deserialize, Serialize};
 
+/// Percentage of range treated as a zone that is too close to the limit
 const EDGE_ZONE_RATIO: f64 = 0.1;
 
 pub struct PriceManager {
+    instrument: String,
     current_price: f64,
     upper_limit: f64,
     lower_limit: f64,
 }
 
 impl PriceManager {
-    pub fn new(start_price: f64, upper_limit: f64, lower_limit: f64) -> Self {
+    pub fn new(instrument: String, start_price: f64, upper_limit: f64, lower_limit: f64) -> Self {
         Self {
+            instrument,
             current_price: start_price,
             upper_limit,
             lower_limit,
@@ -63,17 +66,18 @@ impl PriceManager {
 
         self.current_price = rounded;
 
-        Price::new(rounded)
+        Price::new(self.instrument.clone(), rounded)
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Price {
+    pub instrument: String,
     pub value: f64,
 }
 
 impl Price {
-    pub fn new(value: f64) -> Self {
-        Self { value }
+    pub fn new(instrument: String, value: f64) -> Self {
+        Self { instrument, value }
     }
 }

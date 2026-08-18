@@ -5,7 +5,7 @@ use std::{
 };
 use uuid::Uuid;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Order {
     pub size: u64,
     pub side: OrderType,

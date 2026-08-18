@@ -73,7 +73,7 @@ impl OrderBook {
             same_side_book
                 .entry(price)
                 .or_insert_with(PriceLevel::new)
-                .add(new_order);
+                .add(new_order.clone());
         }
 
         if fills.is_empty() {

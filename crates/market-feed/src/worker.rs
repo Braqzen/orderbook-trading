@@ -1,5 +1,5 @@
 use crate::{
-    api::websocket,
+    api::WsServer,
     proto::{
         PriceUpdate,
         generator_feed_server::{GeneratorFeed, GeneratorFeedServer},
@@ -23,7 +23,7 @@ use tracing::{error, info};
 
 struct State {
     current_price: RwLock<f64>,
-    broadcast: Sender<f64>,
+    price_channel: Sender<PriceUpdate>,
 }
 
 pub struct Worker {
@@ -34,12 +34,12 @@ pub struct Worker {
 
 impl Worker {
     pub fn new(socket: SocketAddr, ws: SocketAddr) -> Self {
-        let (sender, _receiver) = broadcast::channel::<f64>(128);
+        let (price_channel, _price_receiver) = broadcast::channel::<PriceUpdate>(128);
 
         Self {
             state: Arc::new(State {
                 current_price: RwLock::new(0.0),
-                broadcast: sender,
+                price_channel,
             }),
             socket,
             ws,
@@ -63,9 +63,8 @@ impl Worker {
         let generator_feed = MyGeneratorFeed {
             state: Arc::clone(&self.state),
         };
-
-        let tx = self.state.broadcast.clone();
-        let ws = self.ws;
+        let price_channel = self.state.price_channel.clone();
+        let ws_server = WsServer::new(self.ws, price_channel);
         let mut tasks = JoinSet::new();
 
         tasks.spawn(async move {
@@ -85,7 +84,7 @@ impl Worker {
 
         tasks.spawn(async move {
             let _guard = ws_guard;
-            websocket(tx, ws, ws_token).await
+            ws_server.run(ws_token).await
         });
 
         tokio::select! {
@@ -122,9 +121,13 @@ impl GeneratorFeed for MyGeneratorFeed {
         loop {
             match prices.message().await {
                 Ok(Some(price)) => {
-                    info!(price = price.value, "Price update");
+                    info!(
+                        instrument = price.instrument,
+                        price = price.value,
+                        "Price update"
+                    );
                     *self.state.current_price.write().await = price.value;
-                    let _ = self.state.broadcast.send(price.value);
+                    let _ = self.state.price_channel.send(price);
                 }
                 Ok(None) => return Ok(Response::new(())),
                 Err(error) => return Err(error),

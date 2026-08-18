@@ -39,7 +39,7 @@ impl Worker {
         let market_feed = MarketFeed::new(self.market.clone());
         let orderbook = OrderBook::new(self.orderbook.clone());
         let engine = Engine::new();
-        let (feed_sender, feed_receiver) = mpsc::channel(128);
+        let (feed_sender, feed_receiver) = mpsc::channel::<(String, f64)>(128);
         let (order_sender, order_receiver) = mpsc::channel(128);
 
         let mut tasks = JoinSet::new();
