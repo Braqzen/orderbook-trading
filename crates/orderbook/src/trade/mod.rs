@@ -1,4 +1,5 @@
 mod fill;
+mod instrument;
 mod level;
 mod order;
 mod orderbook;
@@ -7,6 +8,7 @@ mod risk;
 mod submission;
 
 pub use fill::ExecutionResult;
+pub use instrument::Instrument;
 pub use order::{Order, OrderType};
 pub use orderbook::OrderBook;
 pub use price::Price;

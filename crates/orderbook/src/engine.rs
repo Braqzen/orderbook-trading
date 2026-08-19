@@ -1,4 +1,4 @@
-use crate::trade::{ExecutionResult, OrderBook, Request, Response, RiskAnalyser};
+use crate::trade::{ExecutionResult, Instrument, OrderBook, Request, Response, RiskAnalyser};
 use eyre::Result;
 use tokio::{select, sync::mpsc::Receiver};
 use tokio_util::sync::CancellationToken;
@@ -7,28 +7,26 @@ use tracing::{error, info, warn};
 pub struct Engine {
     book: OrderBook,
     risk: RiskAnalyser,
+    receiver: Receiver<Request>,
 }
 
 impl Engine {
-    pub fn new(instrument: String) -> Self {
+    pub fn new(instrument: Instrument, receiver: Receiver<Request>) -> Self {
         Self {
             book: OrderBook::new(),
             risk: RiskAnalyser::new(instrument),
+            receiver,
         }
     }
 
-    pub async fn run(
-        &mut self,
-        mut receiver: Receiver<Request>,
-        token: CancellationToken,
-    ) -> Result<()> {
+    pub async fn run(mut self, token: CancellationToken) -> Result<()> {
         loop {
             select! {
                 biased;
 
                 _ = token.cancelled() => break,
 
-                request = receiver.recv() => {
+                request = self.receiver.recv() => {
                     let Some(request) = request else {
                         error!("Engine to orderbook api channel closed");
                         break;

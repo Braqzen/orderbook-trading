@@ -1,25 +1,32 @@
-use crate::{engine::Engine, websocket::WsServer};
+use crate::{engine::Engine, trade::Instrument, websocket::WsServer};
 use eyre::Result;
 use std::net::SocketAddr;
 use tokio::{
     select,
     signal::unix::{SignalKind, signal},
     sync::mpsc,
-    task::JoinSet,
+    task::{JoinError, JoinSet},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 pub struct Worker {
-    ws: SocketAddr,
+    server: WsServer,
+    engine: Engine,
 }
 
 impl Worker {
-    pub fn new(ws: SocketAddr) -> Self {
-        Self { ws }
+    pub fn new(ws: SocketAddr, instrument: String) -> Result<Self> {
+        let instrument = Instrument::try_from(instrument.as_str())?;
+        let (order_sender, order_receiver) = mpsc::channel(128);
+
+        Ok(Self {
+            server: WsServer::new(ws, order_sender),
+            engine: Engine::new(instrument, order_receiver),
+        })
     }
 
-    pub async fn run(&self, instrument: String) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         // Handle running locally and interrupting the process with ctrl+c.
         let mut sigint = signal(SignalKind::interrupt())?;
         // Handle running in a container and terminating the process with docker stop.
@@ -28,26 +35,14 @@ impl Worker {
         let token = CancellationToken::new();
         let ws_token = token.child_token();
         let engine_token = token.child_token();
-        let ws_guard = token.clone().drop_guard();
-        let engine_guard = token.clone().drop_guard();
-
-        let (order_sender, order_receiver) = mpsc::channel(128);
-        let ws_server = WsServer::new(self.ws, order_sender);
-        let mut engine = Engine::new(instrument);
 
         let mut tasks = JoinSet::new();
 
-        tasks.spawn(async move {
-            let _guard = ws_guard;
-            ws_server.run(ws_token).await
-        });
-        tasks.spawn(async move {
-            let _guard = engine_guard;
-            engine.run(order_receiver, engine_token).await
-        });
+        tasks.spawn(self.server.run(ws_token));
+        tasks.spawn(self.engine.run(engine_token));
 
         select! {
-            _ = token.cancelled() => info!("Service exited"),
+            Some(result) = tasks.join_next() => log_task_result(result),
             _ = sigint.recv() => info!("Received interrupt signal"),
             _ = sigterm.recv() => info!("Received terminate signal"),
         }
@@ -55,13 +50,17 @@ impl Worker {
         token.cancel();
 
         while let Some(result) = tasks.join_next().await {
-            match result {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => error!(%error, "Service failed"),
-                Err(error) => error!(%error, "Service task failed"),
-            }
+            log_task_result(result);
         }
 
         Ok(())
+    }
+}
+
+fn log_task_result(result: std::result::Result<Result<()>, JoinError>) {
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => error!(%error, "Service failed"),
+        Err(error) => error!(%error, "Service task failed"),
     }
 }

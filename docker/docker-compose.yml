@@ -38,6 +38,7 @@ services:
     image: orderbook-trading-client:latest
     environment:
       RUST_LOG: info
+      INVENTORY: ETH:10,USD:50000
       MARKET_FEED_URL: ws://market-feed:8001
       ORDERBOOK_URL: ws://orderbook:8002
       <<: *common-env-telemetry

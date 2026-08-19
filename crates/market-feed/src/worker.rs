@@ -1,75 +1,57 @@
 use crate::{
     api::WsServer,
-    proto::{
-        PriceUpdate,
-        generator_feed_server::{GeneratorFeed, GeneratorFeedServer},
-    },
+    grpc::MyGeneratorFeed,
+    proto::{PriceUpdate, generator_feed_server::GeneratorFeedServer},
+    state::State,
 };
 use eyre::Result;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
     net::TcpListener,
     signal::unix::{SignalKind, signal},
-    sync::{
-        RwLock,
-        broadcast::{self, Sender},
-    },
-    task::JoinSet,
+    sync::{RwLock, broadcast},
+    task::{JoinError, JoinSet},
 };
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_util::sync::CancellationToken;
-use tonic::{Request, Response, Status, Streaming, transport::Server};
+use tonic::transport::Server;
 use tracing::{error, info};
 
-struct State {
-    current_price: RwLock<f64>,
-    price_channel: Sender<PriceUpdate>,
-}
-
 pub struct Worker {
-    state: Arc<State>,
     socket: SocketAddr,
-    ws: SocketAddr,
+    state: Arc<State>,
+    ws: WsServer,
 }
 
 impl Worker {
     pub fn new(socket: SocketAddr, ws: SocketAddr) -> Self {
         let (price_channel, _price_receiver) = broadcast::channel::<PriceUpdate>(128);
 
+        let ws = WsServer::new(ws, price_channel.clone());
+
         Self {
-            state: Arc::new(State {
-                current_price: RwLock::new(0.0),
-                price_channel,
-            }),
             socket,
+            state: Arc::new(State::new(RwLock::new(0.0), price_channel)),
             ws,
         }
     }
 
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         // Handle running locally and interrupting the process with ctrl+c.
         let mut sigint = signal(SignalKind::interrupt())?;
         // Handle running in a container and terminating the process with docker stop.
         let mut sigterm = signal(SignalKind::terminate())?;
 
-        let listener = TcpListener::bind(self.socket.clone()).await?;
+        let listener = TcpListener::bind(self.socket).await?;
 
         let token = CancellationToken::new();
         let grpc_token = token.child_token();
         let ws_token = token.child_token();
-        let grpc_guard = token.clone().drop_guard();
-        let ws_guard = token.clone().drop_guard();
 
-        let generator_feed = MyGeneratorFeed {
-            state: Arc::clone(&self.state),
-        };
-        let price_channel = self.state.price_channel.clone();
-        let ws_server = WsServer::new(self.ws, price_channel);
+        let generator_feed = MyGeneratorFeed::new(self.state);
         let mut tasks = JoinSet::new();
 
         tasks.spawn(async move {
-            let _guard = grpc_guard;
-
             let result: Result<()> = Server::builder()
                 .add_service(GeneratorFeedServer::new(generator_feed))
                 .serve_with_incoming_shutdown(
@@ -82,56 +64,28 @@ impl Worker {
             result
         });
 
-        tasks.spawn(async move {
-            let _guard = ws_guard;
-            ws_server.run(ws_token).await
-        });
+        tasks.spawn(self.ws.run(ws_token));
 
         tokio::select! {
-            _ = token.cancelled() => info!("Service exited"),
+            Some(result) = tasks.join_next() => log_task_result(result),
             _ = sigint.recv() => info!("Received interrupt signal"),
             _ = sigterm.recv() => info!("Received terminate signal"),
         }
 
         token.cancel();
+
         while let Some(result) = tasks.join_next().await {
-            match result {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => error!(%error, "Service failed"),
-                Err(error) => error!(%error, "Service task failed"),
-            }
+            log_task_result(result);
         }
 
         Ok(())
     }
 }
 
-struct MyGeneratorFeed {
-    state: Arc<State>,
-}
-
-#[tonic::async_trait]
-impl GeneratorFeed for MyGeneratorFeed {
-    async fn publish_price(
-        &self,
-        request: Request<Streaming<PriceUpdate>>,
-    ) -> Result<Response<()>, Status> {
-        let mut prices = request.into_inner();
-
-        loop {
-            match prices.message().await {
-                Ok(Some(price)) => {
-                    info!(
-                        instrument = price.instrument,
-                        price = price.value,
-                        "Price update"
-                    );
-                    *self.state.current_price.write().await = price.value;
-                    let _ = self.state.price_channel.send(price);
-                }
-                Ok(None) => return Ok(Response::new(())),
-                Err(error) => return Err(error),
-            }
-        }
+fn log_task_result(result: std::result::Result<Result<()>, JoinError>) {
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => error!(%error, "Service failed"),
+        Err(error) => error!(%error, "Service task failed"),
     }
 }

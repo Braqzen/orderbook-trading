@@ -1,4 +1,6 @@
 mod api;
+mod grpc;
+mod state;
 mod worker;
 
 use eyre::Result;
@@ -21,7 +23,7 @@ async fn main() -> Result<()> {
     let ws = SocketAddr::from_str(&ws)?;
     let socket = SocketAddr::from_str(&socket)?;
 
-    let mut worker = Worker::new(socket, ws);
+    let worker = Worker::new(socket, ws);
     let result = worker.run().await;
 
     logger.shutdown()?;

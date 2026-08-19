@@ -1,5 +1,6 @@
 use crate::{
-    price::{Price, PriceManager},
+    instrument::Instrument,
+    price::{Price, PriceConfig, PriceManager},
     proto::{PriceUpdate, generator_feed_client::GeneratorFeedClient},
 };
 use eyre::Result;
@@ -13,10 +14,10 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, info};
 
 /// Time between sending a new price (milli seconds)
-const SLEEP: u64 = 10;
+const PUBLISH_INTERVAL: u64 = 10;
 
 pub struct Worker {
-    sleep: u64,
+    publish_interval: u64,
     market_feed_url: String,
     price_manager: PriceManager,
 }
@@ -28,12 +29,15 @@ impl Worker {
         start_price: f64,
         upper_limit: f64,
         lower_limit: f64,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        let instrument = Instrument::try_from(instrument.as_str())?;
+        let price_config = PriceConfig::new(start_price, upper_limit, lower_limit)?;
+
+        Ok(Self {
             market_feed_url,
-            sleep: SLEEP,
-            price_manager: PriceManager::new(instrument, start_price, upper_limit, lower_limit),
-        }
+            publish_interval: PUBLISH_INTERVAL,
+            price_manager: PriceManager::new(instrument, price_config),
+        })
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -76,7 +80,7 @@ impl Worker {
                         Err(error) => Err(error.into()),
                     };
                 }
-                _ = sleep(Duration::from_millis(self.sleep)) => {}
+                _ = sleep(Duration::from_millis(self.publish_interval)) => {}
             }
         }
     }
@@ -86,12 +90,12 @@ impl Worker {
 
         sender
             .send(PriceUpdate {
-                instrument: instrument.clone(),
+                instrument: instrument.to_string(),
                 value,
             })
             .await?;
 
-        info!(instrument, price = value, "Sent price");
+        info!(%instrument, price = value, "Sent price");
 
         Ok(())
     }

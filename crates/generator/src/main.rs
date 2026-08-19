@@ -1,3 +1,4 @@
+mod instrument;
 mod price;
 mod worker;
 
@@ -26,7 +27,7 @@ async fn main() -> Result<()> {
         start_price,
         upper_limit,
         lower_limit,
-    );
+    )?;
     let result = worker.run().await;
 
     logger.shutdown()?;

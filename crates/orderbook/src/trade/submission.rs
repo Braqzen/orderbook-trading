@@ -1,17 +1,22 @@
-use crate::trade::{Order, Price, risk::RejectionReason};
+use crate::trade::{Instrument, Order, Price, risk::RejectionReason};
 use serde::Serialize;
 use tokio::sync::oneshot::Sender;
 use uuid::Uuid;
 
 pub struct Request {
-    pub instrument: String,
+    pub instrument: Instrument,
     pub price: Price,
     pub order: Order,
     pub response: Sender<Response>,
 }
 
 impl Request {
-    pub fn new(instrument: String, price: Price, order: Order, response: Sender<Response>) -> Self {
+    pub fn new(
+        instrument: Instrument,
+        price: Price,
+        order: Order,
+        response: Sender<Response>,
+    ) -> Self {
         Self {
             instrument,
             price,
