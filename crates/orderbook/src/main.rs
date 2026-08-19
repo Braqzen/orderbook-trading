@@ -17,8 +17,8 @@ async fn main() -> Result<()> {
     let instrument = std::env::var("INSTRUMENT")?;
     let ws = SocketAddr::from_str(&ws)?;
 
-    let worker = Worker::new(ws);
-    let result = worker.run(instrument).await;
+    let worker = Worker::new(ws, instrument)?;
+    let result = worker.run().await;
 
     logger.shutdown()?;
 

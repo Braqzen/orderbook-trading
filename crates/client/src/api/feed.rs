@@ -1,3 +1,4 @@
+use crate::{api::MarketPrice, trade::Instrument};
 use eyre::Result;
 use futures_util::StreamExt;
 use serde::Deserialize;
@@ -15,7 +16,7 @@ impl MarketFeed {
         Self { url }
     }
 
-    pub async fn run(&self, sender: Sender<(String, f64)>, token: CancellationToken) -> Result<()> {
+    pub async fn run(self, sender: Sender<MarketPrice>, token: CancellationToken) -> Result<()> {
         let (mut stream, _response) = connect_async(self.url.clone()).await?;
 
         loop {
@@ -34,10 +35,18 @@ impl MarketFeed {
                                     continue;
                                 }
                             };
+                            let instrument = match Instrument::try_from(price.instrument.as_str()) {
+                                Ok(instrument) => instrument,
+                                Err(error) => {
+                                    warn!(%error, "Received invalid instrument");
+                                    continue;
+                                }
+                            };
+                            let price = MarketPrice::new(instrument, price.value);
 
                             info!(instrument = %price.instrument, price = price.value, "Price update");
 
-                            if sender.send((price.instrument, price.value)).await.is_err() {
+                            if sender.send(price).await.is_err() {
                                 error!("Failed to send price through channel");
                                 break;
                             }

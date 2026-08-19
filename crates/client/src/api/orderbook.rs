@@ -17,7 +17,7 @@ impl OrderBook {
         Self { url }
     }
 
-    pub async fn run(&self, mut receiver: Receiver<Order>, token: CancellationToken) -> Result<()> {
+    pub async fn run(self, mut receiver: Receiver<Order>, token: CancellationToken) -> Result<()> {
         let (mut stream, _response) = connect_async(self.url.clone()).await?;
 
         loop {

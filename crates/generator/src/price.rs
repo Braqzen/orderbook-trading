@@ -1,3 +1,5 @@
+use crate::instrument::Instrument;
+use eyre::{Result, ensure};
 use rand::{random_bool, random_range};
 use serde::{Deserialize, Serialize};
 
@@ -5,19 +7,19 @@ use serde::{Deserialize, Serialize};
 const EDGE_ZONE_RATIO: f64 = 0.1;
 
 pub struct PriceManager {
-    instrument: String,
+    instrument: Instrument,
     current_price: f64,
     upper_limit: f64,
     lower_limit: f64,
 }
 
 impl PriceManager {
-    pub fn new(instrument: String, start_price: f64, upper_limit: f64, lower_limit: f64) -> Self {
+    pub fn new(instrument: Instrument, config: PriceConfig) -> Self {
         Self {
             instrument,
-            current_price: start_price,
-            upper_limit,
-            lower_limit,
+            current_price: config.start_price,
+            upper_limit: config.upper_limit,
+            lower_limit: config.lower_limit,
         }
     }
 
@@ -70,14 +72,35 @@ impl PriceManager {
     }
 }
 
+pub struct PriceConfig {
+    start_price: f64,
+    lower_limit: f64,
+    upper_limit: f64,
+}
+
+impl PriceConfig {
+    pub fn new(start_price: f64, upper_limit: f64, lower_limit: f64) -> Result<Self> {
+        ensure!(
+            lower_limit < start_price && start_price < upper_limit,
+            "Price must satisfy lower_limit < start_price < upper_limit"
+        );
+
+        Ok(Self {
+            start_price,
+            lower_limit,
+            upper_limit,
+        })
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Price {
-    pub instrument: String,
+    pub instrument: Instrument,
     pub value: f64,
 }
 
 impl Price {
-    pub fn new(instrument: String, value: f64) -> Self {
+    pub fn new(instrument: Instrument, value: f64) -> Self {
         Self { instrument, value }
     }
 }
