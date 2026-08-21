@@ -1,5 +1,5 @@
 use crate::trade::Instrument;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 use uuid::Uuid;
 
@@ -33,7 +33,7 @@ impl Order {
     }
 }
 
-#[derive(Serialize, Clone, Copy)]
+#[derive(Deserialize, Serialize, Clone, Copy)]
 pub enum OrderType {
     Buy,
     Sell,

@@ -1,8 +1,8 @@
-use crate::trade::order::Order;
+use crate::trade::order::LimitOrder;
 use std::collections::VecDeque;
 
 pub struct PriceLevel {
-    orders: VecDeque<Order>,
+    orders: VecDeque<LimitOrder>,
 }
 
 impl PriceLevel {
@@ -12,15 +12,15 @@ impl PriceLevel {
         }
     }
 
-    pub fn add(&mut self, order: Order) {
+    pub fn add(&mut self, order: LimitOrder) {
         self.orders.push_back(order);
     }
 
-    pub fn first_order(&mut self) -> Option<&mut Order> {
+    pub fn first_order(&mut self) -> Option<&mut LimitOrder> {
         self.orders.front_mut()
     }
 
-    pub fn remove_first_order(&mut self) -> Option<Order> {
+    pub fn remove_first_order(&mut self) -> Option<LimitOrder> {
         self.orders.pop_front()
     }
 

@@ -1,14 +1,23 @@
-use crate::{engine::Engine, trade::Instrument, websocket::WsServer};
+use crate::{
+    api::{ConnectionRegistry, WsServer},
+    engine::Engine,
+    trade::Instrument,
+};
 use eyre::Result;
-use std::net::SocketAddr;
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::{
     select,
     signal::unix::{SignalKind, signal},
-    sync::mpsc,
+    sync::{RwLock, mpsc},
     task::{JoinError, JoinSet},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+
+// TODO: how many orders in channel as buffer?
+//       if this global channel is full, and some clients keep sending and fill their queues
+//       their connections will be killed.
+const GLOBAL_ORDER_QUEUE: usize = 8192;
 
 pub struct Worker {
     server: WsServer,
@@ -18,11 +27,12 @@ pub struct Worker {
 impl Worker {
     pub fn new(ws: SocketAddr, instrument: String) -> Result<Self> {
         let instrument = Instrument::try_from(instrument.as_str())?;
-        let (order_sender, order_receiver) = mpsc::channel(128);
+        let (order_sender, order_receiver) = mpsc::channel(GLOBAL_ORDER_QUEUE);
+        let connection_registry: ConnectionRegistry = Arc::new(RwLock::new(HashMap::new()));
 
         Ok(Self {
-            server: WsServer::new(ws, order_sender),
-            engine: Engine::new(instrument, order_receiver),
+            server: WsServer::new(ws, order_sender, connection_registry.clone()),
+            engine: Engine::new(instrument, order_receiver, connection_registry),
         })
     }
 

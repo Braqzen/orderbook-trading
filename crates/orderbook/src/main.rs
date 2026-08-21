@@ -1,6 +1,6 @@
+mod api;
 mod engine;
 mod trade;
-mod websocket;
 mod worker;
 
 use eyre::Result;

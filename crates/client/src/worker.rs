@@ -1,6 +1,6 @@
 use crate::{
     api::{MarketFeed, MarketPrice, OrderBook},
-    trade::{Engine, Inventory},
+    trade::{Engine, Inventory, Quantity},
 };
 use eyre::{Result, eyre};
 use tokio::{
@@ -29,13 +29,23 @@ impl Worker {
                 let amount = amount
                     .parse::<f64>()
                     .map_err(|error| eyre!("Invalid amount for {name}: {error}"))?;
+                let amount = Quantity::try_from(amount).map_err(|error| eyre!("{error}"))?;
                 Ok((name.to_owned(), amount))
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let market_feed = MarketFeed::new(market);
-        let orderbook = OrderBook::new(orderbook);
-        let engine = Engine::new(Inventory::new(values));
+        let (price_sender_channel, price_receiver_channel) = mpsc::channel::<MarketPrice>(128);
+        let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
+        let (trade_sender_channel, trade_receiver_channel) = mpsc::channel(128);
+
+        let market_feed = MarketFeed::new(market, price_sender_channel);
+        let orderbook = OrderBook::new(orderbook, order_receiver_channel, trade_sender_channel);
+        let engine = Engine::new(
+            Inventory::new(values),
+            price_receiver_channel,
+            order_sender_channel,
+            trade_receiver_channel,
+        );
 
         Ok(Self {
             market_feed,
@@ -55,14 +65,11 @@ impl Worker {
         let book_token = token.child_token();
         let engine_token = token.child_token();
 
-        let (feed_sender, feed_receiver) = mpsc::channel::<MarketPrice>(128);
-        let (order_sender, order_receiver) = mpsc::channel(128);
-
         let mut tasks = JoinSet::new();
 
-        tasks.spawn(self.engine.run(feed_receiver, order_sender, engine_token));
-        tasks.spawn(self.orderbook.run(order_receiver, book_token));
-        tasks.spawn(self.market_feed.run(feed_sender, feed_token));
+        tasks.spawn(self.engine.run(engine_token));
+        tasks.spawn(self.orderbook.run(book_token));
+        tasks.spawn(self.market_feed.run(feed_token));
 
         select! {
             Some(result) = tasks.join_next() => log_task_result(result),
