@@ -1,6 +1,7 @@
+use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq, Ord, PartialOrd, Serialize)]
 pub struct Price(pub u64);
 
 impl Display for Price {

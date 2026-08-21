@@ -9,14 +9,18 @@ use tracing::{error, info, warn};
 
 pub struct MarketFeed {
     url: String,
+    price_sender_channel: Sender<MarketPrice>,
 }
 
 impl MarketFeed {
-    pub fn new(url: String) -> Self {
-        Self { url }
+    pub fn new(url: String, price_sender_channel: Sender<MarketPrice>) -> Self {
+        Self {
+            url,
+            price_sender_channel,
+        }
     }
 
-    pub async fn run(self, sender: Sender<MarketPrice>, token: CancellationToken) -> Result<()> {
+    pub async fn run(self, token: CancellationToken) -> Result<()> {
         let (mut stream, _response) = connect_async(self.url.clone()).await?;
 
         loop {
@@ -46,7 +50,7 @@ impl MarketFeed {
 
                             info!(instrument = %price.instrument, price = price.value, "Price update");
 
-                            if sender.send(price).await.is_err() {
+                            if self.price_sender_channel.send(price).await.is_err() {
                                 error!("Failed to send price through channel");
                                 break;
                             }

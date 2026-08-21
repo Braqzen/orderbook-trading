@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Display, Formatter},
     num::NonZeroU64,
@@ -6,14 +6,14 @@ use std::{
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub struct Order {
+pub struct LimitOrder {
     pub size: u64,
     pub side: OrderType,
     pub client_id: Uuid,
     pub order_id: Uuid,
 }
 
-impl Order {
+impl LimitOrder {
     pub fn new(size: NonZeroU64, side: OrderType, client_id: Uuid, order_id: Uuid) -> Self {
         Self {
             size: size.get(),
@@ -28,7 +28,7 @@ impl Order {
     }
 }
 
-#[derive(Clone, Copy, Deserialize)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 pub enum OrderType {
     Buy,
     Sell,

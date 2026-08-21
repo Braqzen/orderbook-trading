@@ -1,9 +1,4 @@
-use crate::trade::{
-    fill::{ExecutionResult, Fill},
-    level::PriceLevel,
-    order::{Order, OrderType},
-    price::Price,
-};
+use crate::trade::{LimitOrder, OrderType, Price, PriceLevel, Trade, TradeResult};
 use std::collections::BTreeMap;
 
 pub struct OrderBook {
@@ -19,8 +14,9 @@ impl OrderBook {
         }
     }
 
-    pub fn trade(&mut self, price: Price, mut new_order: Order) -> ExecutionResult {
-        let mut fills = vec![];
+    // TODO: we still do not filter/jump over same client id so client can self trade
+    pub fn trade(&mut self, price: Price, mut new_order: LimitOrder) -> TradeResult {
+        let mut trades = vec![];
 
         let (opposite_side_book, same_side_book) = match new_order.side {
             OrderType::Buy => (&mut self.sell, &mut self.buy),
@@ -55,10 +51,30 @@ impl OrderBook {
             };
 
             let fill_size = new_order.size.min(existing_order.size);
+
             existing_order.size -= fill_size;
             new_order.size -= fill_size;
 
-            fills.push(Fill::new(fill_price, fill_size));
+            trades.push((
+                existing_order.client_id,
+                Trade::new(
+                    existing_order.order_id,
+                    existing_order.side,
+                    fill_price,
+                    fill_size,
+                    existing_order.size,
+                ),
+            ));
+            trades.push((
+                new_order.client_id,
+                Trade::new(
+                    new_order.order_id,
+                    new_order.side,
+                    fill_price,
+                    fill_size,
+                    new_order.size,
+                ),
+            ));
 
             if existing_order.filled() {
                 price_level.remove_first_order();
@@ -69,22 +85,15 @@ impl OrderBook {
             }
         }
 
+        let remaining = new_order.size;
+
         if !new_order.filled() {
             same_side_book
                 .entry(price)
                 .or_insert_with(PriceLevel::new)
-                .add(new_order.clone());
+                .add(new_order);
         }
 
-        if fills.is_empty() {
-            ExecutionResult::Unfilled { order: new_order }
-        } else if !new_order.filled() {
-            ExecutionResult::PartiallyFilled {
-                fills,
-                remainder: new_order,
-            }
-        } else {
-            ExecutionResult::Filled { fills }
-        }
+        TradeResult::new(trades, remaining)
     }
 }

@@ -1,23 +1,34 @@
-use crate::trade::Order;
+use crate::{api::Trade, trade::Order};
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
-use serde::Deserialize;
-use tokio::{select, sync::mpsc::Receiver};
+use tokio::{
+    select,
+    sync::mpsc::{Receiver, Sender, error::TrySendError},
+};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 pub struct OrderBook {
     url: String,
+    order_receiver_channel: Receiver<Order>,
+    trade_sender_channel: Sender<Trade>,
 }
 
 impl OrderBook {
-    pub fn new(url: String) -> Self {
-        Self { url }
+    pub fn new(
+        url: String,
+        order_receiver_channel: Receiver<Order>,
+        trade_sender_channel: Sender<Trade>,
+    ) -> Self {
+        Self {
+            url,
+            order_receiver_channel,
+            trade_sender_channel,
+        }
     }
 
-    pub async fn run(self, mut receiver: Receiver<Order>, token: CancellationToken) -> Result<()> {
+    pub async fn run(mut self, token: CancellationToken) -> Result<()> {
         let (mut stream, _response) = connect_async(self.url.clone()).await?;
 
         loop {
@@ -26,7 +37,56 @@ impl OrderBook {
 
                 _ = token.cancelled() => break,
 
-                order = receiver.recv() => {
+                message = stream.next() => {
+                    match message {
+                        Some(Ok(Message::Text(payload))) => {
+                            let trade = match serde_json::from_str::<Trade>(&payload) {
+                                Ok(trade) => trade,
+                                Err(error) => {
+                                    warn!(%error, "Received invalid trade");
+                                    continue;
+                                }
+                            };
+
+                            info!(
+                                order = %trade.order_id,
+                                side = %trade.side,
+                                price = trade.price,
+                                size = trade.size,
+                                remaining = trade.remaining,
+                                "Trade executed"
+                            );
+
+                            match self.trade_sender_channel.try_send(trade) {
+                                Ok(()) => {}
+                                Err(TrySendError::Closed(_)) => {
+                                    error!("Engine trade channel closed");
+                                    break;
+                                }
+                                Err(TrySendError::Full(_)) => {
+                                    warn!("Engine trade queue full");
+                                }
+                            }
+                        }
+                        Some(Ok(Message::Close(_))) => {
+                            error!("Orderbook service explicitly closed connection");
+                            break;
+                        }
+                        Some(Err(error)) => {
+                            error!(%error, "Unknown error");
+                            break;
+                        }
+                        None => {
+                            error!("Disconnected from orderbook service");
+                            break;
+                        }
+                        _ => {
+                            warn!("Skipping unexpected message");
+                        }
+                    }
+                }
+
+                order = self.order_receiver_channel.recv() => {
                     let Some(order) = order else {
                         error!("Engine to orderbook api channel closed");
                         break;
@@ -50,62 +110,6 @@ impl OrderBook {
                         }
                     }
                 }
-
-                message = stream.next() => {
-                    match message {
-                        Some(Ok(Message::Text(payload))) => {
-                            let response = match serde_json::from_str::<OrderResponse>(&payload) {
-                                Ok(response) => response,
-                                Err(error) => {
-                                    warn!(%error, "Received invalid order response");
-                                    continue;
-                                }
-                            };
-
-                            match response {
-                                OrderResponse::Rejected { order_id, reason } => {
-                                    warn!(order = %order_id, %reason, "Order rejected");
-                                }
-                                OrderResponse::Unfilled { order_id } => {
-                                    info!(order = %order_id, "Order accepted without fills");
-                                }
-                                OrderResponse::PartiallyFilled {
-                                    order_id,
-                                    filled_size,
-                                    remaining_size,
-                                } => {
-                                    info!(
-                                        order = %order_id,
-                                        filled_size,
-                                        remaining_size,
-                                        "Order partially filled"
-                                    );
-                                }
-                                OrderResponse::Filled {
-                                    order_id,
-                                    filled_size,
-                                } => {
-                                    info!(order = %order_id, filled_size, "Order filled");
-                                }
-                            }
-                        }
-                        Some(Ok(Message::Close(_))) => {
-                            error!("Orderbook service explicitly closed connection");
-                            break;
-                        }
-                        Some(Err(error)) => {
-                            error!(%error, "Unknown error");
-                            break;
-                        }
-                        None => {
-                            error!("Disconnected from orderbook service");
-                            break;
-                        }
-                        _ => {
-                            warn!("Skipping unexpected message");
-                        }
-                    }
-                }
             }
         }
 
@@ -115,25 +119,4 @@ impl OrderBook {
 
         Ok(())
     }
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-enum OrderResponse {
-    Rejected {
-        order_id: Uuid,
-        reason: String,
-    },
-    Unfilled {
-        order_id: Uuid,
-    },
-    PartiallyFilled {
-        order_id: Uuid,
-        filled_size: u64,
-        remaining_size: u64,
-    },
-    Filled {
-        order_id: Uuid,
-        filled_size: u64,
-    },
 }

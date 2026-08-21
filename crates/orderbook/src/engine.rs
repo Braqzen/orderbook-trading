@@ -1,21 +1,33 @@
-use crate::trade::{ExecutionResult, Instrument, OrderBook, Request, Response, RiskAnalyser};
+use crate::{
+    api::ConnectionRegistry,
+    trade::{Instrument, OrderBook, Request, RiskAnalyser},
+};
 use eyre::Result;
-use tokio::{select, sync::mpsc::Receiver};
+use tokio::{
+    select,
+    sync::mpsc::{Receiver, error::TrySendError},
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 pub struct Engine {
     book: OrderBook,
     risk: RiskAnalyser,
-    receiver: Receiver<Request>,
+    order_receiver: Receiver<Request>,
+    connection_registry: ConnectionRegistry,
 }
 
 impl Engine {
-    pub fn new(instrument: Instrument, receiver: Receiver<Request>) -> Self {
+    pub fn new(
+        instrument: Instrument,
+        order_receiver: Receiver<Request>,
+        connection_registry: ConnectionRegistry,
+    ) -> Self {
         Self {
             book: OrderBook::new(),
             risk: RiskAnalyser::new(instrument),
-            receiver,
+            order_receiver,
+            connection_registry,
         }
     }
 
@@ -26,97 +38,70 @@ impl Engine {
 
                 _ = token.cancelled() => break,
 
-                request = self.receiver.recv() => {
-                    let Some(request) = request else {
+                request = self.order_receiver.recv() => {
+                    let Some(Request { instrument, price, order }) = request else {
                         error!("Engine to orderbook api channel closed");
                         break;
                     };
 
-                    match self
-                        .risk
-                        .evaluate(&request.instrument, &request.order, &request.price)
-                    {
+                    match self.risk.evaluate(&instrument, &order, &price) {
                         Ok(()) => {}
                         Err(reason) => {
                             warn!(
-                                instrument = %request.instrument,
-                                order = %request.order.order_id,
+                                instrument = %instrument,
+                                order = %order.order_id,
+                                ?reason,
                                 "Order rejected"
                             );
-                            if request
-                                .response
-                                .send(Response::Rejected {
-                                    order_id: request.order.order_id,
-                                    reason,
-                                })
-                                .is_err()
-                            {
-                                warn!("Client disconnected before receiving rejection");
-                            }
                             continue;
                         }
                     }
 
-                    let Request {
-                        price,
-                        order,
-                        response: response_sender,
-                        ..
-                    } = request;
+                    let result = self.book.trade(price, order.clone());
 
-                    let requested_size = order.size;
-                    let order_id = order.order_id;
-                    let trades = self.book.trade(price, order.clone());
-
-                    let (response, status, fill_count, remaining_size) = match trades {
-                        ExecutionResult::Filled { fills } => (
-                            Response::Filled {
-                                order_id,
-                                filled_size: requested_size,
-                            },
-                            "filled",
-                            fills.len(),
-                            0,
-                        ),
-                        ExecutionResult::PartiallyFilled { fills, remainder } => {
-                            let remaining_size = remainder.size;
-                            let filled_size = requested_size - remaining_size;
-
-                            (
-                                Response::PartiallyFilled {
-                                    order_id,
-                                    filled_size,
-                                    remaining_size,
-                                },
-                                "partial",
-                                fills.len(),
-                                remaining_size,
-                            )
-                        }
-                        ExecutionResult::Unfilled { .. } => (
-                            Response::Unfilled { order_id },
-                            "unfilled",
-                            0,
-                            requested_size,
-                        ),
-                    };
-                    let filled_size = requested_size - remaining_size;
+                    let remaining = result.remaining;
+                    let filled_size = order.size - remaining;
 
                     info!(
                         limit_price = %price,
-                        requested_size,
+                        requested_size = order.size,
                         filled_size,
-                        remaining_size,
-                        fill_count,
+                        remaining,
+                        trade_count = result.trades.len() / 2,
                         side = %order.side,
-                        status,
+                        status = %result.status(),
                         client=%order.client_id,
-                        order=%order_id,
+                        order=%order.order_id,
                         "Order processed"
                     );
 
-                    if response_sender.send(response).is_err() {
-                        warn!("Client disconnected before receiving order response");
+                    for (client_id, trade) in result.trades {
+                        let client = {
+                            let registry = self.connection_registry.read().await;
+                            registry.get(&client_id).cloned()
+                        };
+
+                        match client {
+                            Some(client) => {
+                                match client.try_send(trade) {
+                                    Ok(()) => {}
+                                    Err(TrySendError::Closed(_)) => {
+                                        warn!(client = %client_id, "Client is not connected");
+                                    }
+                                    Err(TrySendError::Full(_)) => {
+                                        warn!(
+                                            client = %client_id,
+                                            "Client outbound queue full"
+                                        );
+                                        client.disconnect();
+                                        self.connection_registry.write().await.remove(&client_id);
+                                    }
+                                }
+                            }
+                            None => {
+                                warn!(client = %client_id, "Client is not connected");
+                            }
+                        }
                     }
                 }
             }
