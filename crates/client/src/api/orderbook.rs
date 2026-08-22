@@ -8,8 +8,10 @@ use tokio::{
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 pub struct OrderBook {
+    client_id: Uuid,
     url: String,
     order_receiver_channel: Receiver<Order>,
     response_sender_channel: Sender<Response>,
@@ -17,11 +19,13 @@ pub struct OrderBook {
 
 impl OrderBook {
     pub fn new(
+        client_id: Uuid,
         url: String,
         order_receiver_channel: Receiver<Order>,
         response_sender_channel: Sender<Response>,
     ) -> Self {
         Self {
+            client_id,
             url,
             order_receiver_channel,
             response_sender_channel,
@@ -43,7 +47,7 @@ impl OrderBook {
                             let response = match serde_json::from_str::<Response>(&payload) {
                                 Ok(response) => response,
                                 Err(error) => {
-                                    warn!(%error, "Received invalid response");
+                                    warn!(client = %self.client_id, %error, "Received invalid response");
                                     continue;
                                 }
                             };
@@ -51,52 +55,52 @@ impl OrderBook {
                             match self.response_sender_channel.try_send(response) {
                                 Ok(()) => {}
                                 Err(TrySendError::Closed(_)) => {
-                                    error!("Engine response channel closed");
+                                    error!(client = %self.client_id, "Engine response channel closed");
                                     break;
                                 }
                                 Err(TrySendError::Full(_)) => {
-                                    warn!("Engine response queue full");
+                                    warn!(client = %self.client_id, "Engine response queue full");
                                 }
                             }
                         }
                         Some(Ok(Message::Close(_))) => {
-                            error!("Orderbook service explicitly closed connection");
+                            error!(client = %self.client_id, "Orderbook service explicitly closed connection");
                             break;
                         }
                         Some(Err(error)) => {
-                            error!(%error, "Unknown error");
+                            error!(client = %self.client_id, %error, "Unknown error");
                             break;
                         }
                         None => {
-                            error!("Disconnected from orderbook service");
+                            error!(client = %self.client_id, "Disconnected from orderbook service");
                             break;
                         }
                         _ => {
-                            warn!("Skipping unexpected message");
+                            warn!(client = %self.client_id, "Skipping unexpected message");
                         }
                     }
                 }
 
                 order = self.order_receiver_channel.recv() => {
                     let Some(order) = order else {
-                        error!("Engine to orderbook api channel closed");
+                        error!(client = %self.client_id, "Engine to orderbook api channel closed");
                         break;
                     };
 
                     let payload = match serde_json::to_string(&order) {
                         Ok(payload) => payload,
                         Err(error) => {
-                            error!(%error, "Failed to serialize order");
+                            error!(client = %self.client_id, %error, "Failed to serialize order");
                             continue;
                         }
                     };
 
                     match stream.send(Message::Text(payload.into())).await {
                         Ok(()) => {
-                            info!(price = order.price, size = order.size, side = %order.side, "Order sent to orderbook");
+                            info!(client = %self.client_id, price = order.price, size = order.size, side = %order.side, "Order sent to orderbook");
                         },
                         Err(error) => {
-                            error!(%error, "Failed to send order to orderbook");
+                            error!(client = %self.client_id, %error, "Failed to send order to orderbook");
                             break;
                         }
                     }
@@ -105,7 +109,7 @@ impl OrderBook {
         }
 
         if let Err(error) = stream.close(None).await {
-            error!(%error, "Failed to close orderbook connection");
+            error!(client = %self.client_id, %error, "Failed to close orderbook connection");
         }
 
         Ok(())

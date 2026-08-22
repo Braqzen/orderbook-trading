@@ -23,13 +23,14 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(
+        id: Uuid,
         inventory: Inventory,
         price_receiver_channel: Receiver<MarketPrice>,
         order_sender_channel: Sender<Order>,
         response_receiver_channel: Receiver<Response>,
     ) -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id,
             inventory,
             open_orders: HashMap::new(),
             price_receiver_channel,
@@ -47,13 +48,14 @@ impl Engine {
 
                 response = self.response_receiver_channel.recv() => {
                     let Some(response) = response else {
-                        error!("Orderbook response channel closed");
+                        error!(client = %self.id, "Orderbook response channel closed");
                         break;
                     };
 
                     match response {
                         Response::Trade(trade) => {
                             info!(
+                                client = %self.id,
                                 order = %trade.order_id,
                                 side = %trade.side,
                                 price = trade.price,
@@ -63,7 +65,7 @@ impl Engine {
                             );
 
                             let Some(order) = self.open_orders.get(&trade.order_id).cloned() else {
-                                warn!(order = %trade.order_id, "Received fill for unknown order");
+                                warn!(client = %self.id, order = %trade.order_id, "Received fill for unknown order");
                                 continue;
                             };
 
@@ -71,7 +73,7 @@ impl Engine {
                             let fill_size = match Quantity::try_from(trade.size as f64) {
                                 Ok(fill_size) => fill_size,
                                 Err(error) => {
-                                    warn!(%error, order = %trade.order_id, "Invalid fill size");
+                                    warn!(client = %self.id, %error, order = %trade.order_id, "Invalid fill size");
                                     continue;
                                 }
                             };
@@ -100,6 +102,7 @@ impl Engine {
                                 }
                                 Err(error) => {
                                     warn!(
+                                        client = %self.id,
                                         %error,
                                         order = %trade.order_id,
                                         "Failed to apply fill to inventory"
@@ -109,7 +112,7 @@ impl Engine {
                         }
                         Response::Rejection(rejection) => {
                             if !self.open_orders.contains_key(&rejection.order_id) {
-                                warn!(order = %rejection.order_id, "Received rejection for unknown order");
+                                warn!(client = %self.id, order = %rejection.order_id, "Received rejection for unknown order");
                                 continue;
                             }
 
@@ -128,6 +131,7 @@ impl Engine {
                                 Ok(amount) => amount,
                                 Err(error) => {
                                     warn!(
+                                        client = %self.id,
                                         %error,
                                         order = %rejection.order_id,
                                         "Invalid rejected order reserve amount"
@@ -138,6 +142,7 @@ impl Engine {
 
                             if let Err(error) = self.inventory.release(asset, amount) {
                                 warn!(
+                                    client = %self.id,
                                     %error,
                                     order = %rejection.order_id,
                                     "Failed to release rejected order inventory"
@@ -148,6 +153,7 @@ impl Engine {
                             self.open_orders.remove(&rejection.order_id);
 
                             warn!(
+                                client = %self.id,
                                 order = %rejection.order_id,
                                 instrument = %rejection.instrument,
                                 ?rejection.reason,
@@ -159,7 +165,7 @@ impl Engine {
 
                 price = self.price_receiver_channel.recv() => {
                     let Some(MarketPrice { instrument, value }) = price else {
-                        error!("Market feed channel closed");
+                        error!(client = %self.id, "Market feed channel closed");
                         break;
                     };
 
@@ -193,13 +199,13 @@ impl Engine {
                     let amount = match Quantity::try_from(amount) {
                         Ok(amount) => amount,
                         Err(error) => {
-                            warn!(%error, %instrument, %side, size, value, "Invalid reserve amount");
+                            warn!(client = %self.id, %error, %instrument, %side, size, value, "Invalid reserve amount");
                             continue;
                         }
                     };
 
                     if let Err(error) = self.inventory.reserve(asset, amount) {
-                        warn!(%error, %instrument, %side, size, value, "Failed to reserve inventory");
+                        warn!(client = %self.id, %error, %instrument, %side, size, value, "Failed to reserve inventory");
                         continue;
                     }
 
@@ -207,9 +213,9 @@ impl Engine {
 
                     if self.order_sender_channel.send(order.clone()).await.is_err() {
                         if let Err(error) = self.inventory.release(asset, amount) {
-                            error!(%error, %instrument, %side, size, value, "Failed to release unsent order inventory");
+                            error!(client = %self.id, %error, %instrument, %side, size, value, "Failed to release unsent order inventory");
                         }
-                        error!("Order channel closed");
+                        error!(client = %self.id, "Order channel closed");
                         break;
                     }
 

@@ -13,6 +13,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+use uuid::Uuid;
 
 pub struct Worker {
     market_feed: MarketFeed,
@@ -21,7 +22,7 @@ pub struct Worker {
 }
 
 impl Worker {
-    pub fn new(market: String, orderbook: String, config: Config) -> Result<Self> {
+    pub fn new(client_id: Uuid, market: String, orderbook: String, config: Config) -> Result<Self> {
         let randomiser = Randomiser::new(config)?;
         let inventory = randomiser.inventory()?;
         let instruments = randomiser.instruments();
@@ -30,9 +31,15 @@ impl Worker {
         let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
         let (response_sender_channel, response_receiver_channel) = mpsc::channel(128);
 
-        let market_feed = MarketFeed::new(market, instruments, price_sender_channel);
-        let orderbook = OrderBook::new(orderbook, order_receiver_channel, response_sender_channel);
+        let market_feed = MarketFeed::new(client_id, market, instruments, price_sender_channel);
+        let orderbook = OrderBook::new(
+            client_id,
+            orderbook,
+            order_receiver_channel,
+            response_sender_channel,
+        );
         let engine = Engine::new(
+            client_id,
             inventory,
             price_receiver_channel,
             order_sender_channel,

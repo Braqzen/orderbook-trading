@@ -16,8 +16,8 @@ build-orderbook:
 	docker build -f docker/Dockerfile.orderbook -t orderbook-trading-orderbook:latest .
 
 # Docker Compose Commands
-run:
-	docker compose -f docker/docker-compose.yml up -d
+run clients="10":
+	docker compose -f docker/docker-compose.yml up -d --scale client={{clients}}
 	@echo Grafana: http://localhost:3000/dashboards
 
 stop:
