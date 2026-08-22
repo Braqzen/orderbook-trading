@@ -1,7 +1,10 @@
 mod api;
+mod config;
+mod randomiser;
 mod trade;
 mod worker;
 
+use config::Config;
 use eyre::Result;
 use maiya::{Resource, logs::Logger};
 use worker::Worker;
@@ -11,11 +14,12 @@ async fn main() -> Result<()> {
     let resource = Resource::builder().with_service_name("client").build();
     let logger = Logger::new(&resource, "client")?;
 
-    let inventory = std::env::var("INVENTORY")?;
+    let config_path = std::env::var("CONFIG_PATH")?;
     let market = std::env::var("MARKET_FEED_URL")?;
     let orderbook = std::env::var("ORDERBOOK_URL")?;
+    let config = Config::new(config_path)?;
 
-    let worker = Worker::new(market, orderbook, inventory)?;
+    let worker = Worker::new(market, orderbook, config)?;
     let result = worker.run().await;
 
     logger.shutdown()?;

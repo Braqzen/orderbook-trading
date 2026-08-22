@@ -1,4 +1,5 @@
 use crate::trade::{Instrument, LimitOrder, Price};
+use serde::Serialize;
 
 pub struct RiskAnalyser {
     instrument: Instrument,
@@ -25,7 +26,8 @@ impl RiskAnalyser {
 
 pub type RiskResult = Result<(), RejectionReason>;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RejectionReason {
     InvalidInstrument,
 }

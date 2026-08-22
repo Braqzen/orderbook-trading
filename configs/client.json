@@ -1,0 +1,30 @@
+{
+  "instrument": ["ETH-USD", "BTC-USD", "SOL-USD", "XMR-USD", "XRP-USD"],
+  "inventory": [
+    {
+      "symbol": "ETH",
+      "upper_limit": 5,
+      "lower_limit": 0
+    },
+    {
+      "symbol": "BTC",
+      "upper_limit": 2,
+      "lower_limit": 0
+    },
+    {
+      "symbol": "SOL",
+      "upper_limit": 25,
+      "lower_limit": 0
+    },
+    {
+      "symbol": "XMR",
+      "upper_limit": 50,
+      "lower_limit": 0
+    },
+    {
+      "symbol": "USD",
+      "upper_limit": 10000,
+      "lower_limit": 100
+    }
+  ]
+}

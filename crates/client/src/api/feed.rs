@@ -1,6 +1,9 @@
-use crate::{api::MarketPrice, trade::Instrument};
+use crate::{
+    api::{MarketPrice, request::ClientRequest},
+    trade::Instrument,
+};
 use eyre::Result;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::{select, sync::mpsc::Sender};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
@@ -9,19 +12,31 @@ use tracing::{error, info, warn};
 
 pub struct MarketFeed {
     url: String,
+    instruments: Vec<String>,
     price_sender_channel: Sender<MarketPrice>,
 }
 
 impl MarketFeed {
-    pub fn new(url: String, price_sender_channel: Sender<MarketPrice>) -> Self {
+    pub fn new(
+        url: String,
+        instruments: Vec<String>,
+        price_sender_channel: Sender<MarketPrice>,
+    ) -> Self {
         Self {
             url,
+            instruments,
             price_sender_channel,
         }
     }
 
     pub async fn run(self, token: CancellationToken) -> Result<()> {
         let (mut stream, _response) = connect_async(self.url.clone()).await?;
+
+        let subscribe = ClientRequest::subscribe(self.instruments.clone());
+        let payload = serde_json::to_string(&subscribe)?;
+        stream.send(Message::Text(payload.into())).await?;
+
+        info!(instruments = ?self.instruments, "Subscribed to market feed");
 
         loop {
             select! {

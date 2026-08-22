@@ -13,5 +13,5 @@ pub use order::{LimitOrder, OrderType};
 pub use orderbook::OrderBook;
 pub use price::Price;
 pub use request::Request;
-pub use risk::RiskAnalyser;
+pub use risk::{RejectionReason, RiskAnalyser};
 pub use trade::{Trade, TradeResult};

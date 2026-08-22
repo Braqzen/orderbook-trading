@@ -1,4 +1,4 @@
-use crate::{api::Trade, trade::Order};
+use crate::{api::Response, trade::Order};
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
@@ -12,19 +12,19 @@ use tracing::{error, info, warn};
 pub struct OrderBook {
     url: String,
     order_receiver_channel: Receiver<Order>,
-    trade_sender_channel: Sender<Trade>,
+    response_sender_channel: Sender<Response>,
 }
 
 impl OrderBook {
     pub fn new(
         url: String,
         order_receiver_channel: Receiver<Order>,
-        trade_sender_channel: Sender<Trade>,
+        response_sender_channel: Sender<Response>,
     ) -> Self {
         Self {
             url,
             order_receiver_channel,
-            trade_sender_channel,
+            response_sender_channel,
         }
     }
 
@@ -40,31 +40,22 @@ impl OrderBook {
                 message = stream.next() => {
                     match message {
                         Some(Ok(Message::Text(payload))) => {
-                            let trade = match serde_json::from_str::<Trade>(&payload) {
-                                Ok(trade) => trade,
+                            let response = match serde_json::from_str::<Response>(&payload) {
+                                Ok(response) => response,
                                 Err(error) => {
-                                    warn!(%error, "Received invalid trade");
+                                    warn!(%error, "Received invalid response");
                                     continue;
                                 }
                             };
 
-                            info!(
-                                order = %trade.order_id,
-                                side = %trade.side,
-                                price = trade.price,
-                                size = trade.size,
-                                remaining = trade.remaining,
-                                "Trade executed"
-                            );
-
-                            match self.trade_sender_channel.try_send(trade) {
+                            match self.response_sender_channel.try_send(response) {
                                 Ok(()) => {}
                                 Err(TrySendError::Closed(_)) => {
-                                    error!("Engine trade channel closed");
+                                    error!("Engine response channel closed");
                                     break;
                                 }
                                 Err(TrySendError::Full(_)) => {
-                                    warn!("Engine trade queue full");
+                                    warn!("Engine response queue full");
                                 }
                             }
                         }

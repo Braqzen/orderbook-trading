@@ -1,8 +1,10 @@
 use crate::{
     api::{MarketFeed, MarketPrice, OrderBook},
-    trade::{Engine, Inventory, Quantity},
+    config::Config,
+    randomiser::Randomiser,
+    trade::Engine,
 };
-use eyre::{Result, eyre};
+use eyre::Result;
 use tokio::{
     select,
     signal::unix::{SignalKind, signal},
@@ -19,32 +21,22 @@ pub struct Worker {
 }
 
 impl Worker {
-    pub fn new(market: String, orderbook: String, inventory: String) -> Result<Self> {
-        let values = inventory
-            .split(',')
-            .map(|asset| {
-                let (name, amount) = asset
-                    .split_once(':')
-                    .ok_or_else(|| eyre!("Invalid inventory entry: {asset}"))?;
-                let amount = amount
-                    .parse::<f64>()
-                    .map_err(|error| eyre!("Invalid amount for {name}: {error}"))?;
-                let amount = Quantity::try_from(amount).map_err(|error| eyre!("{error}"))?;
-                Ok((name.to_owned(), amount))
-            })
-            .collect::<Result<Vec<_>>>()?;
+    pub fn new(market: String, orderbook: String, config: Config) -> Result<Self> {
+        let randomiser = Randomiser::new(config)?;
+        let inventory = randomiser.inventory()?;
+        let instruments = randomiser.instruments();
 
         let (price_sender_channel, price_receiver_channel) = mpsc::channel::<MarketPrice>(128);
         let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
-        let (trade_sender_channel, trade_receiver_channel) = mpsc::channel(128);
+        let (response_sender_channel, response_receiver_channel) = mpsc::channel(128);
 
-        let market_feed = MarketFeed::new(market, price_sender_channel);
-        let orderbook = OrderBook::new(orderbook, order_receiver_channel, trade_sender_channel);
+        let market_feed = MarketFeed::new(market, instruments, price_sender_channel);
+        let orderbook = OrderBook::new(orderbook, order_receiver_channel, response_sender_channel);
         let engine = Engine::new(
-            Inventory::new(values),
+            inventory,
             price_receiver_channel,
             order_sender_channel,
-            trade_receiver_channel,
+            response_receiver_channel,
         );
 
         Ok(Self {
