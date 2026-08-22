@@ -9,7 +9,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::{
     net::TcpListener,
     signal::unix::{SignalKind, signal},
-    sync::{RwLock, broadcast},
+    sync::broadcast,
     task::{JoinError, JoinSet},
 };
 use tokio_stream::wrappers::TcpListenerStream;
@@ -31,7 +31,7 @@ impl Worker {
 
         Self {
             socket,
-            state: Arc::new(State::new(RwLock::new(0.0), price_channel)),
+            state: Arc::new(State::new(price_channel)),
             ws,
         }
     }

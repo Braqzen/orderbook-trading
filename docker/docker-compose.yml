@@ -9,10 +9,7 @@ services:
     image: orderbook-trading-generator:latest
     environment:
       RUST_LOG: info
-      INSTRUMENT: "ETH-USD"
-      START_PRICE: 3100.0
-      UPPER_LIMIT: 3800.0
-      LOWER_LIMIT: 1900.0
+      CONFIG_PATH: /app/config/generator.json
       MARKET_FEED_URL: http://market-feed:8000
       <<: *common-env-telemetry
     depends_on:

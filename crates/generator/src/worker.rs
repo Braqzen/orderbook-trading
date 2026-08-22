@@ -1,102 +1,95 @@
 use crate::{
-    instrument::Instrument,
-    price::{Price, PriceConfig, PriceManager},
-    proto::{PriceUpdate, generator_feed_client::GeneratorFeedClient},
+    config::Config, feed::Feed, price::PriceManager, proto::PriceUpdate, publisher::Publisher,
 };
 use eyre::Result;
+use rand::random_range;
 use std::time::Duration;
 use tokio::{
+    select,
     signal::unix::{SignalKind, signal},
-    sync::mpsc::{self, Sender},
+    sync::mpsc,
+    task::{JoinError, JoinSet},
     time::sleep,
 };
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 /// Time between sending a new price (milli seconds)
 const PUBLISH_INTERVAL: u64 = 10;
 
+/// Max random delay before spawning each feed task (milli seconds)
+const SPAWN_JITTER_MS: u64 = 5;
+
 pub struct Worker {
     publish_interval: u64,
     market_feed_url: String,
-    price_manager: PriceManager,
+    price_managers: Vec<PriceManager>,
 }
 
 impl Worker {
-    pub fn new(
-        market_feed_url: String,
-        instrument: String,
-        start_price: f64,
-        upper_limit: f64,
-        lower_limit: f64,
-    ) -> Result<Self> {
-        let instrument = Instrument::try_from(instrument.as_str())?;
-        let price_config = PriceConfig::new(start_price, upper_limit, lower_limit)?;
+    pub fn new(market_feed_url: String, config: Config) -> Result<Self> {
+        let price_managers = config
+            .feeds
+            .iter()
+            .map(|feed| {
+                let instrument = feed.instrument()?;
+                let price_config = feed.price_config()?;
+                Ok(PriceManager::new(instrument, price_config))
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             market_feed_url,
             publish_interval: PUBLISH_INTERVAL,
-            price_manager: PriceManager::new(instrument, price_config),
+            price_managers,
         })
     }
 
-    pub async fn run(&mut self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         // Handle running locally and interrupting the process with ctrl+c.
         let mut sigint = signal(SignalKind::interrupt())?;
         // Handle running in a container and terminating the process with docker stop.
         let mut sigterm = signal(SignalKind::terminate())?;
 
-        let shutdown = async {
-            tokio::select! {
-                _ = sigint.recv() => info!("Received interrupt signal"),
-                _ = sigterm.recv() => info!("Received terminate signal"),
-            }
-        };
-        tokio::pin!(shutdown);
+        let token = CancellationToken::new();
+        let (price_sender_channel, price_receiver_channel) = mpsc::channel::<PriceUpdate>(128);
+        let mut tasks = JoinSet::new();
 
-        let (sender, receiver) = mpsc::channel(128);
-        let mut client = GeneratorFeedClient::connect(self.market_feed_url.clone()).await?;
-        let publish = client.publish_price(ReceiverStream::new(receiver));
-        tokio::pin!(publish);
+        let publisher_token = token.child_token();
+        let publisher = Publisher::new(self.market_feed_url, price_receiver_channel);
+        tasks.spawn(publisher.run(publisher_token));
 
-        loop {
-            if let Err(error) = self.send_request(&sender).await {
-                error!(%error, "Failed to send price");
-            }
+        for price_manager in self.price_managers.into_iter() {
+            sleep(Duration::from_millis(random_range(0..SPAWN_JITTER_MS))).await;
 
-            tokio::select! {
-                biased;
-
-                _ = &mut shutdown => {
-                    drop(sender);
-                    return match publish.await {
-                        Ok(_) => Ok(()),
-                        Err(error) => Err(error.into()),
-                    };
-                }
-                result = &mut publish => {
-                    return match result {
-                        Ok(_) => Err(std::io::Error::other("price stream closed").into()),
-                        Err(error) => Err(error.into()),
-                    };
-                }
-                _ = sleep(Duration::from_millis(self.publish_interval)) => {}
-            }
+            let feed_token = token.child_token();
+            let price_sender_channel = price_sender_channel.clone();
+            let feed = Feed::new(price_manager, price_sender_channel, self.publish_interval);
+            tasks.spawn(feed.run(feed_token));
         }
-    }
 
-    async fn send_request(&mut self, sender: &Sender<PriceUpdate>) -> Result<()> {
-        let Price { instrument, value } = self.price_manager.next_price();
+        drop(price_sender_channel);
 
-        sender
-            .send(PriceUpdate {
-                instrument: instrument.to_string(),
-                value,
-            })
-            .await?;
+        select! {
+            Some(result) = tasks.join_next() => log_task_result(result),
+            _ = sigint.recv() => info!("Received interrupt signal"),
+            _ = sigterm.recv() => info!("Received terminate signal"),
+        }
 
-        info!(%instrument, price = value, "Sent price");
+        token.cancel();
+
+        while let Some(result) = tasks.join_next().await {
+            log_task_result(result);
+        }
 
         Ok(())
+    }
+}
+
+fn log_task_result(result: std::result::Result<Result<()>, JoinError>) {
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => error!(%error, "Service failed"),
+        Err(error) => error!(%error, "Service task failed"),
     }
 }
