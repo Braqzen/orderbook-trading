@@ -9,8 +9,10 @@ use tokio::{select, sync::mpsc::Sender};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 pub struct MarketFeed {
+    client_id: Uuid,
     url: String,
     instruments: Vec<String>,
     price_sender_channel: Sender<MarketPrice>,
@@ -18,11 +20,13 @@ pub struct MarketFeed {
 
 impl MarketFeed {
     pub fn new(
+        client_id: Uuid,
         url: String,
         instruments: Vec<String>,
         price_sender_channel: Sender<MarketPrice>,
     ) -> Self {
         Self {
+            client_id,
             url,
             instruments,
             price_sender_channel,
@@ -36,7 +40,7 @@ impl MarketFeed {
         let payload = serde_json::to_string(&subscribe)?;
         stream.send(Message::Text(payload.into())).await?;
 
-        info!(instruments = ?self.instruments, "Subscribed to market feed");
+        info!(client = %self.client_id, instruments = ?self.instruments, "Subscribed to market feed");
 
         loop {
             select! {
@@ -50,40 +54,40 @@ impl MarketFeed {
                             let price = match serde_json::from_str::<PriceUpdate>(text.as_str()) {
                                 Ok(price) => price,
                                 Err(error) => {
-                                    warn!(%error, %text, "Failed to parse price update");
+                                    warn!(client = %self.client_id, %error, %text, "Failed to parse price update");
                                     continue;
                                 }
                             };
                             let instrument = match Instrument::try_from(price.instrument.as_str()) {
                                 Ok(instrument) => instrument,
                                 Err(error) => {
-                                    warn!(%error, "Received invalid instrument");
+                                    warn!(client = %self.client_id, %error, "Received invalid instrument");
                                     continue;
                                 }
                             };
                             let price = MarketPrice::new(instrument, price.value);
 
-                            info!(instrument = %price.instrument, price = price.value, "Price update");
+                            info!(client = %self.client_id, instrument = %price.instrument, price = price.value, "Price update");
 
                             if self.price_sender_channel.send(price).await.is_err() {
-                                error!("Failed to send price through channel");
+                                error!(client = %self.client_id, "Failed to send price through channel");
                                 break;
                             }
                         }
                         Some(Ok(Message::Close(_))) => {
-                            error!("Market service explicitly closed connection");
+                            error!(client = %self.client_id, "Market service explicitly closed connection");
                             break;
                         }
                         Some(Err(error)) => {
-                            error!(%error, "Unknown error");
+                            error!(client = %self.client_id, %error, "Unknown error");
                             break;
                         }
                         None => {
-                            error!("Disconnected from market service");
+                            error!(client = %self.client_id, "Disconnected from market service");
                             break;
                         }
                         _ => {
-                            warn!("Skipping unexpected message");
+                            warn!(client = %self.client_id, "Skipping unexpected message");
                         }
                     }
                 }
@@ -91,7 +95,7 @@ impl MarketFeed {
         }
 
         if let Err(error) = stream.close(None).await {
-            error!(%error, "Failed to close market feed connection");
+            error!(client = %self.client_id, %error, "Failed to close market feed connection");
         }
 
         Ok(())
