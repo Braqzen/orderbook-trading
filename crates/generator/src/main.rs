@@ -1,8 +1,11 @@
+mod config;
+mod feed;
 mod instrument;
 mod price;
+mod publisher;
 mod worker;
 
-use crate::worker::Worker;
+use crate::{config::Config, worker::Worker};
 use eyre::Result;
 use maiya::{Resource, logs::Logger};
 
@@ -16,18 +19,10 @@ async fn main() -> Result<()> {
     let logger = Logger::new(&resource, "generator")?;
 
     let market_feed_url = std::env::var("MARKET_FEED_URL")?;
-    let instrument = std::env::var("INSTRUMENT")?;
-    let start_price = std::env::var("START_PRICE")?.parse()?;
-    let upper_limit = std::env::var("UPPER_LIMIT")?.parse()?;
-    let lower_limit = std::env::var("LOWER_LIMIT")?.parse()?;
+    let config_path = std::env::var("CONFIG_PATH")?;
+    let config = Config::new(config_path)?;
 
-    let mut worker = Worker::new(
-        market_feed_url,
-        instrument,
-        start_price,
-        upper_limit,
-        lower_limit,
-    )?;
+    let worker = Worker::new(market_feed_url, config)?;
     let result = worker.run().await;
 
     logger.shutdown()?;

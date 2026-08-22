@@ -1,16 +1,17 @@
 use crate::proto::PriceUpdate;
+use std::collections::HashMap;
 use tokio::sync::{RwLock, broadcast::Sender};
 
 pub struct State {
-    pub current_price: RwLock<f64>,
-    pub price_channel: Sender<PriceUpdate>,
+    pub prices: RwLock<HashMap<String, f64>>,
+    pub price_sender_channel: Sender<PriceUpdate>,
 }
 
 impl State {
-    pub fn new(current_price: RwLock<f64>, price_channel: Sender<PriceUpdate>) -> Self {
+    pub fn new(price_sender_channel: Sender<PriceUpdate>) -> Self {
         Self {
-            current_price,
-            price_channel,
+            prices: RwLock::new(HashMap::new()),
+            price_sender_channel,
         }
     }
 }

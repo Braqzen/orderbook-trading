@@ -28,4 +28,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/generator /app/server
+COPY configs/generator.json /app/config/generator.json
 CMD ["/app/server"]

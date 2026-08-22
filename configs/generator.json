@@ -1,0 +1,32 @@
+[
+  {
+    "symbol": "ETH-USD",
+    "start_price": 3100,
+    "upper_limit": 3800,
+    "lower_limit": 1900
+  },
+  {
+    "symbol": "BTC-USD",
+    "start_price": 80000,
+    "upper_limit": 110000,
+    "lower_limit": 60000
+  },
+  {
+    "symbol": "SOL-USD",
+    "start_price": 90,
+    "upper_limit": 180,
+    "lower_limit": 25
+  },
+  {
+    "symbol": "XMR-USD",
+    "start_price": 200,
+    "upper_limit": 350,
+    "lower_limit": 120
+  },
+  {
+    "symbol": "XRP-USD",
+    "start_price": 1,
+    "upper_limit": 2,
+    "lower_limit": 0.5
+  }
+]

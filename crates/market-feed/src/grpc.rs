@@ -33,8 +33,12 @@ impl GeneratorFeed for MyGeneratorFeed {
                         price = price.value,
                         "Price update"
                     );
-                    *self.state.current_price.write().await = price.value;
-                    let _ = self.state.price_channel.send(price);
+                    self.state
+                        .prices
+                        .write()
+                        .await
+                        .insert(price.instrument.clone(), price.value);
+                    let _ = self.state.price_sender_channel.send(price);
                 }
                 Ok(None) => return Ok(Response::new(())),
                 Err(error) => return Err(error),

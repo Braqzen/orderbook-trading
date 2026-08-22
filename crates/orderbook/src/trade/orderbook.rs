@@ -14,7 +14,6 @@ impl OrderBook {
         }
     }
 
-    // TODO: we still do not filter/jump over same client id so client can self trade
     pub fn trade(&mut self, price: Price, mut new_order: LimitOrder) -> TradeResult {
         let mut trades = vec![];
 
