@@ -1,6 +1,6 @@
 use crate::{
-    api::order::RawOrder,
-    trade::{LimitOrder, Price, Request, Trade},
+    api::{Response, order::RawOrder},
+    trade::{LimitOrder, Price, Request},
 };
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
@@ -21,31 +21,31 @@ use uuid::Uuid;
 
 /// Number of orders a client can send to the server to buffer
 const ORDER_QUEUE: usize = 16;
-/// Number of trades that can be made in the engine and buffered before publishing
-const TRADE_QUEUE_SIZE: usize = 1024;
+/// Number of messages that can be made in the engine and buffered before publishing
+const OUTBOUND_QUEUE_SIZE: usize = 1024;
 /// Quantity of time before a connection is dropped when publishing
-const TRADE_SEND_TIMEOUT: Duration = Duration::from_secs(2);
+const OUTBOUND_SEND_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub struct ClientHandle {
-    sender: Sender<Trade>,
+    sender: Sender<Response>,
     token: CancellationToken,
 }
 
 impl ClientHandle {
-    pub fn new(sender: Sender<Trade>, token: CancellationToken) -> Self {
+    pub fn new(sender: Sender<Response>, token: CancellationToken) -> Self {
         Self { sender, token }
     }
 
-    pub fn try_send(&self, trade: Trade) -> Result<(), TrySendError<Trade>> {
-        self.sender.try_send(trade)
+    pub fn try_send(&self, message: Response) -> Result<(), TrySendError<Response>> {
+        self.sender.try_send(message)
     }
 
     pub fn disconnect(&self) {
         self.token.cancel();
     }
 
-    pub fn same_channel(&self, other: &Sender<Trade>) -> bool {
+    pub fn same_channel(&self, other: &Sender<Response>) -> bool {
         self.sender.same_channel(other)
     }
 }
@@ -88,7 +88,8 @@ impl Connection {
         };
 
         let (client_order_sender, mut client_order_receiver) = channel::<Request>(ORDER_QUEUE);
-        let (trade_sender_channel, mut trade_receiver_channel) = channel::<Trade>(TRADE_QUEUE_SIZE);
+        let (outbound_sender_channel, mut outbound_receiver_channel) =
+            channel::<Response>(OUTBOUND_QUEUE_SIZE);
         let mut client_id = None;
 
         loop {
@@ -133,7 +134,7 @@ impl Connection {
                                     self.connection_registry.write().await.insert(
                                         raw_order.client_id,
                                         ClientHandle::new(
-                                            trade_sender_channel.clone(),
+                                            outbound_sender_channel.clone(),
                                             self.token.clone(),
                                         ),
                                     );
@@ -183,22 +184,22 @@ impl Connection {
                     }
                 }
 
-                // Receive trades from the engine and attempt to publish to connected client
-                trade = trade_receiver_channel.recv() => {
-                    let Some(trade) = trade else {
+                // Receive messages from the engine and attempt to publish to connected client
+                message = outbound_receiver_channel.recv() => {
+                    let Some(message) = message else {
                         break;
                     };
 
-                    let payload = match serde_json::to_string(&trade) {
+                    let payload = match serde_json::to_string(&message) {
                         Ok(payload) => payload,
                         Err(error) => {
-                            error!(%error, "Failed to serialize trade");
+                            error!(%error, "Failed to serialize outbound message");
                             continue;
                         }
                     };
 
                     match timeout(
-                        TRADE_SEND_TIMEOUT,
+                        OUTBOUND_SEND_TIMEOUT,
                         ws_stream.send(Message::Text(payload.into())),
                     )
                     .await
@@ -222,7 +223,7 @@ impl Connection {
             let mut registry = self.connection_registry.write().await;
 
             let should_remove = match registry.get(&client_id) {
-                Some(client) => client.same_channel(&trade_sender_channel),
+                Some(client) => client.same_channel(&outbound_sender_channel),
                 None => false,
             };
 

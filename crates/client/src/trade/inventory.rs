@@ -49,6 +49,37 @@ impl Inventory {
         Ok(())
     }
 
+    pub fn release(&mut self, asset: &Asset, amount: Quantity) -> Result<(), String> {
+        if amount <= Quantity::ZERO {
+            return Err("release amount must be a positive finite value".to_owned());
+        }
+
+        let reserved = match self.reserved.get(asset).copied() {
+            Some(reserved) => reserved,
+            None => return Err("asset not in reserved inventory".to_owned()),
+        };
+
+        if reserved < amount {
+            return Err("insufficient reserved inventory".to_owned());
+        }
+
+        if !self.available.contains_key(asset) {
+            return Err("asset not in available inventory".to_owned());
+        }
+
+        match self.reserved.get_mut(asset) {
+            Some(reserved) => *reserved -= amount,
+            None => return Err("asset not in reserved inventory".to_owned()),
+        }
+
+        match self.available.get_mut(asset) {
+            Some(available) => *available += amount,
+            None => return Err("asset not in available inventory".to_owned()),
+        }
+
+        Ok(())
+    }
+
     pub fn apply_buy(
         &mut self,
         base: &Asset,

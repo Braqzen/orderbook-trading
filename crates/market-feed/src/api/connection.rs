@@ -1,7 +1,10 @@
-use crate::proto::PriceUpdate;
+use crate::{
+    api::request::{ClientRequest, Instruction, Operation},
+    proto::PriceUpdate,
+};
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
-use std::net::SocketAddr;
+use std::{collections::HashSet, net::SocketAddr};
 use tokio::{
     net::TcpStream,
     select,
@@ -42,15 +45,40 @@ impl Connection {
             }
         };
 
+        let mut subscriptions = HashSet::new();
+
         loop {
             select! {
                 biased;
 
                 _ = self.token.cancelled() => break,
 
-                // Ignore most incomming messages from the client
                 message = ws_stream.next() => {
                     match message {
+                        Some(Ok(Message::Text(payload))) => {
+                            let request = match serde_json::from_str::<ClientRequest>(&payload) {
+                                Ok(request) => request,
+                                Err(error) => {
+                                    warn!(%error, "Received invalid client request");
+                                    continue;
+                                }
+                            };
+
+                            match request.op {
+                                Operation::Subscribe => {
+                                    let Instruction::Instruments { instruments } =
+                                        request.instruction;
+
+                                    subscriptions.extend(instruments);
+
+                                    info!(
+                                        client = %self.client,
+                                        count = subscriptions.len(),
+                                        "Client subscribed"
+                                    );
+                                }
+                            }
+                        }
                         Some(Ok(Message::Close(_))) | None => break,
                         Some(Err(error)) => {
                             error!(%error, "WebSocket connection failed");
@@ -60,10 +88,13 @@ impl Connection {
                     }
                 }
 
-                // Generator has sent a price update, send it to a client
                 price_update = self.price_receiver_channel.recv() => {
                     match price_update {
                         Ok(price_update) => {
+                            if !subscriptions.contains(&price_update.instrument) {
+                                continue;
+                            }
+
                             info!(
                                 client = %self.client,
                                 instrument = price_update.instrument,

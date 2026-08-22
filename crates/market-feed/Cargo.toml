@@ -8,6 +8,7 @@ eyre.workspace = true
 futures-util.workspace = true
 maiya.workspace = true
 prost.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tonic.workspace = true
 tonic-prost.workspace = true
