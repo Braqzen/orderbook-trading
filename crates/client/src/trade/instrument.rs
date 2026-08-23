@@ -2,7 +2,7 @@ use eyre::{Result, ensure, eyre};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
 pub struct Instrument {
     base: Asset,
     quote: Asset,

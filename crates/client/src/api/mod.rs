@@ -1,10 +1,5 @@
-mod feed;
+mod market;
 mod orderbook;
-mod price;
-mod request;
-mod response;
 
-pub use feed::MarketFeed;
-pub use orderbook::OrderBook;
-pub use price::MarketPrice;
-pub use response::Response;
+pub use market::{MarketFeed, MarketPrice};
+pub use orderbook::{OrderBook, Response};

@@ -20,6 +20,7 @@ use tracing::{error, info};
 const GLOBAL_ORDER_QUEUE: usize = 8192;
 
 pub struct Worker {
+    instrument: Instrument,
     server: WsServer,
     engine: Engine,
 }
@@ -31,7 +32,13 @@ impl Worker {
         let connection_registry: ConnectionRegistry = Arc::new(RwLock::new(HashMap::new()));
 
         Ok(Self {
-            server: WsServer::new(ws, order_sender, connection_registry.clone()),
+            instrument: instrument.clone(),
+            server: WsServer::new(
+                ws,
+                instrument.clone(),
+                order_sender,
+                connection_registry.clone(),
+            ),
             engine: Engine::new(instrument, order_receiver, connection_registry),
         })
     }
@@ -52,25 +59,25 @@ impl Worker {
         tasks.spawn(self.engine.run(engine_token));
 
         select! {
-            Some(result) = tasks.join_next() => log_task_result(result),
-            _ = sigint.recv() => info!("Received interrupt signal"),
-            _ = sigterm.recv() => info!("Received terminate signal"),
+            Some(result) = tasks.join_next() => log_task_result(&self.instrument, result),
+            _ = sigint.recv() => info!(instrument = %self.instrument, "Received interrupt signal"),
+            _ = sigterm.recv() => info!(instrument = %self.instrument, "Received terminate signal"),
         }
 
         token.cancel();
 
         while let Some(result) = tasks.join_next().await {
-            log_task_result(result);
+            log_task_result(&self.instrument, result);
         }
 
         Ok(())
     }
 }
 
-fn log_task_result(result: std::result::Result<Result<()>, JoinError>) {
+fn log_task_result(instrument: &Instrument, result: std::result::Result<Result<()>, JoinError>) {
     match result {
         Ok(Ok(())) => {}
-        Ok(Err(error)) => error!(%error, "Service failed"),
-        Err(error) => error!(%error, "Service task failed"),
+        Ok(Err(error)) => error!(%instrument, %error, "Service failed"),
+        Err(error) => error!(%instrument, %error, "Service task failed"),
     }
 }

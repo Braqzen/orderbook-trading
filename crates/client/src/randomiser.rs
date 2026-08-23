@@ -1,16 +1,13 @@
 use crate::{
     config::Config,
-    trade::{Inventory, Quantity},
+    trade::{Instrument, Inventory, Quantity},
 };
 use eyre::{Result, ensure, eyre};
 use rand::seq::SliceRandom;
 
 const USD_SYMBOL: &str = "USD";
 const MIN_ASSETS: usize = 1;
-const MAX_ASSETS: usize = 4;
-
 const MIN_INSTRUMENTS: usize = 1;
-const MAX_INSTRUMENTS: usize = 4;
 
 pub struct Randomiser {
     config: Config,
@@ -60,9 +57,8 @@ impl Randomiser {
             .partition(|entry| entry.symbol == USD_SYMBOL);
 
         assets.shuffle(&mut rand::rng());
-        assets.truncate(rand::random_range(
-            MIN_ASSETS..=MAX_ASSETS.min(assets.len()),
-        ));
+        let asset_count = rand::random_range(MIN_ASSETS..=assets.len());
+        assets.truncate(asset_count);
         usd.extend(assets);
 
         let values = usd
@@ -79,12 +75,11 @@ impl Randomiser {
         Ok(Inventory::new(values))
     }
 
-    pub fn instruments(&self) -> Vec<String> {
-        let mut instruments = self.config.instruments.clone();
+    pub fn instruments(&self) -> Vec<Instrument> {
+        let mut instruments: Vec<Instrument> = self.config.instruments.keys().cloned().collect();
         instruments.shuffle(&mut rand::rng());
-        instruments.truncate(rand::random_range(
-            MIN_INSTRUMENTS..=MAX_INSTRUMENTS.min(instruments.len()),
-        ));
+        let instrument_count = rand::random_range(MIN_INSTRUMENTS..=self.config.instruments.len());
+        instruments.truncate(instrument_count);
 
         instruments
     }

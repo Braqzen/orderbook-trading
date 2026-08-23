@@ -1,6 +1,6 @@
 use crate::{
     api::{Response, order::RawOrder},
-    trade::{LimitOrder, Price, Request},
+    trade::{Instrument, LimitOrder, Price, Request},
 };
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
@@ -55,6 +55,7 @@ pub type ConnectionRegistry = Arc<RwLock<HashMap<Uuid, ClientHandle>>>;
 pub struct Connection {
     /// Client stream
     stream: TcpStream,
+    instrument: Instrument,
     /// Channel to send client requests to engine
     order_sender_channel: Sender<Request>,
     /// Token to cancel task
@@ -66,12 +67,14 @@ pub struct Connection {
 impl Connection {
     pub fn new(
         stream: TcpStream,
+        instrument: Instrument,
         order_sender_channel: Sender<Request>,
         token: CancellationToken,
         connection_registry: ConnectionRegistry,
     ) -> Self {
         Self {
             stream,
+            instrument,
             order_sender_channel,
             token,
             connection_registry,
@@ -82,7 +85,7 @@ impl Connection {
         let mut ws_stream = match accept_async(self.stream).await {
             Ok(stream) => stream,
             Err(error) => {
-                error!(%error, "WebSocket handshake failed");
+                error!(instrument = %self.instrument, %error, "WebSocket handshake failed");
                 return Ok(());
             }
         };
@@ -103,7 +106,7 @@ impl Connection {
                             let raw_order = match serde_json::from_str::<RawOrder>(&payload) {
                                 Ok(order) => order,
                                 Err(error) => {
-                                    warn!(%error, "Received invalid order");
+                                    warn!(instrument = %self.instrument, %error, "Received invalid order");
                                     continue;
                                 }
                             };
@@ -112,7 +115,7 @@ impl Connection {
                             let price = match Price::try_from(raw_order.price) {
                                 Ok(price) => price,
                                 Err(error) => {
-                                    warn!(%error, "Received invalid order price");
+                                    warn!(instrument = %self.instrument, %error, "Received invalid order price");
                                     continue;
                                 }
                             };
@@ -123,6 +126,7 @@ impl Connection {
                                     if registered_id != raw_order.client_id =>
                                 {
                                     warn!(
+                                        instrument = %self.instrument,
                                         registered_client = %registered_id,
                                         submitted_client = %raw_order.client_id,
                                         "Connection attempted to change client ID"
@@ -148,18 +152,18 @@ impl Connection {
                             match client_order_sender.try_send(request) {
                                 Ok(()) => {}
                                 Err(TrySendError::Closed(_)) => {
-                                    error!("Order channel closed");
+                                    error!(instrument = %self.instrument, "Order channel closed");
                                     break;
                                 }
                                 Err(TrySendError::Full(_)) => {
-                                    warn!("Client order queue full");
+                                    warn!(instrument = %self.instrument, "Client order queue full");
                                     break;
                                 }
                             }
                         }
                         Some(Ok(Message::Close(_))) | None => break,
                         Some(Err(error)) => {
-                            error!(%error, "WebSocket connection failed");
+                            error!(instrument = %self.instrument, %error, "WebSocket connection failed");
                             break;
                         }
                         _ => {}
@@ -174,11 +178,11 @@ impl Connection {
                     match self.order_sender_channel.try_send(request) {
                         Ok(()) => {}
                         Err(TrySendError::Closed(_)) => {
-                            error!("Order channel closed");
+                            error!(instrument = %self.instrument, "Order channel closed");
                             break;
                         }
                         Err(TrySendError::Full(_)) => {
-                            warn!("Global order queue full");
+                            warn!(instrument = %self.instrument, "Global order queue full");
                             break;
                         }
                     }
@@ -193,7 +197,7 @@ impl Connection {
                     let payload = match serde_json::to_string(&message) {
                         Ok(payload) => payload,
                         Err(error) => {
-                            error!(%error, "Failed to serialize outbound message");
+                            error!(instrument = %self.instrument, %error, "Failed to serialize outbound message");
                             continue;
                         }
                     };
@@ -206,11 +210,11 @@ impl Connection {
                     {
                         Ok(Ok(())) => {}
                         Ok(Err(error)) => {
-                            error!(%error, "Failed to send WebSocket message");
+                            error!(instrument = %self.instrument, %error, "Failed to send WebSocket message");
                             break;
                         }
                         Err(_) => {
-                            warn!("Client send timed out");
+                            warn!(instrument = %self.instrument, "Client send timed out");
                             break;
                         }
                     }
@@ -233,7 +237,7 @@ impl Connection {
         }
 
         if let Err(error) = ws_stream.close(None).await {
-            error!(%error, "Failed to close WebSocket connection");
+            error!(instrument = %self.instrument, %error, "Failed to close WebSocket connection");
         }
 
         Ok(())
