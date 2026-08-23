@@ -1,4 +1,4 @@
-use crate::{api::connection::Connection, proto::PriceUpdate};
+use crate::{api::connection::Connection, metrics::MarketFeedMetrics, proto::PriceUpdate};
 use eyre::Result;
 use std::net::SocketAddr;
 use tokio::{
@@ -13,6 +13,7 @@ use tracing::error;
 pub struct WsServer {
     socket: SocketAddr,
     price_sender_channel: Sender<PriceUpdate>,
+    metrics: MarketFeedMetrics,
 }
 
 impl WsServer {
@@ -20,6 +21,7 @@ impl WsServer {
         Self {
             socket,
             price_sender_channel,
+            metrics: MarketFeedMetrics::new(),
         }
     }
 
@@ -57,6 +59,7 @@ impl WsServer {
                             client,
                             price_receiver_channel,
                             connection_token,
+                            self.metrics.clone(),
                         )
                         .run(),
                     );

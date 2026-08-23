@@ -1,4 +1,5 @@
 use crate::{
+    metrics::FeedMetrics,
     price::{Price, PriceManager},
     proto::PriceUpdate,
 };
@@ -12,6 +13,7 @@ pub struct Feed {
     price_manager: PriceManager,
     price_sender_channel: Sender<PriceUpdate>,
     publish_interval: u64,
+    metrics: FeedMetrics,
 }
 
 impl Feed {
@@ -24,6 +26,7 @@ impl Feed {
             price_manager,
             price_sender_channel,
             publish_interval,
+            metrics: FeedMetrics::new(),
         }
     }
 
@@ -41,7 +44,10 @@ impl Feed {
                 })
                 .await
             {
-                Ok(()) => info!(%instrument, price = value, "Sent price"),
+                Ok(()) => {
+                    self.metrics.record_sent_price(&instrument, value);
+                    info!(%instrument, price = value, "Sent price");
+                }
                 Err(error) => {
                     error!(%error, "Failed to send price");
                     break;

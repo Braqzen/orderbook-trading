@@ -1,6 +1,7 @@
 use crate::{
     api::{ConnectionRegistry, WsServer},
     engine::Engine,
+    metrics::OrderbookMetrics,
     trade::Instrument,
 };
 use eyre::Result;
@@ -30,6 +31,7 @@ impl Worker {
         let instrument = Instrument::try_from(instrument.as_str())?;
         let (order_sender, order_receiver) = mpsc::channel(GLOBAL_ORDER_QUEUE);
         let connection_registry: ConnectionRegistry = Arc::new(RwLock::new(HashMap::new()));
+        let metrics = OrderbookMetrics::new(&instrument);
 
         Ok(Self {
             instrument: instrument.clone(),
@@ -38,8 +40,9 @@ impl Worker {
                 instrument.clone(),
                 order_sender,
                 connection_registry.clone(),
+                metrics.clone(),
             ),
-            engine: Engine::new(instrument, order_receiver, connection_registry),
+            engine: Engine::new(instrument, order_receiver, connection_registry, metrics),
         })
     }
 

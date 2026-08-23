@@ -7,6 +7,7 @@ edition = "2024"
 eyre.workspace = true
 futures-util.workspace = true
 maiya.workspace = true
+opentelemetry.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true

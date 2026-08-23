@@ -7,6 +7,10 @@ pub struct Quantity(f64);
 impl Quantity {
     pub const ZERO: Self = Self(0.0);
 
+    pub fn value(self) -> f64 {
+        self.0
+    }
+
     pub fn mul_price(self, price: f64) -> Result<Self, String> {
         Self::try_from(self.0 * price)
     }

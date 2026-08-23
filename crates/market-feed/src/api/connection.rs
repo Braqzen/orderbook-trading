@@ -1,5 +1,6 @@
 use crate::{
     api::request::{ClientRequest, Instruction, Operation},
+    metrics::MarketFeedMetrics,
     proto::PriceUpdate,
 };
 use eyre::Result;
@@ -19,6 +20,7 @@ pub struct Connection {
     client: SocketAddr,
     price_receiver_channel: Receiver<PriceUpdate>,
     token: CancellationToken,
+    metrics: MarketFeedMetrics,
 }
 
 impl Connection {
@@ -27,12 +29,14 @@ impl Connection {
         client: SocketAddr,
         price_receiver_channel: Receiver<PriceUpdate>,
         token: CancellationToken,
+        metrics: MarketFeedMetrics,
     ) -> Self {
         Self {
             stream,
             client,
             price_receiver_channel,
             token,
+            metrics,
         }
     }
 
@@ -46,6 +50,7 @@ impl Connection {
         };
 
         let mut subscriptions = HashSet::new();
+        self.metrics.client_connected();
 
         loop {
             select! {
@@ -69,7 +74,11 @@ impl Connection {
                                     let Instruction::Instruments { instruments } =
                                         request.instruction;
 
-                                    subscriptions.extend(instruments);
+                                    for instrument in instruments {
+                                        if subscriptions.insert(instrument.clone()) {
+                                            self.metrics.instrument_subscribed(&instrument);
+                                        }
+                                    }
 
                                     info!(
                                         client = %self.client,
@@ -123,6 +132,11 @@ impl Connection {
                 }
             }
         }
+
+        for instrument in subscriptions {
+            self.metrics.instrument_unsubscribed(&instrument);
+        }
+        self.metrics.client_disconnected();
 
         if let Err(error) = ws_stream.close(None).await {
             error!(%error, "Failed to close WebSocket connection");

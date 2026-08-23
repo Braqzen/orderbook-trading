@@ -1,6 +1,7 @@
 use crate::{
     api::{MarketPrice, Response},
-    trade::{Inventory, Order, OrderType, Quantity},
+    metrics::ClientMetrics,
+    trade::{Asset, Instrument, Inventory, Order, OrderType, Quantity},
 };
 use eyre::Result;
 use std::collections::HashMap;
@@ -19,6 +20,7 @@ pub struct Engine {
     price_receiver_channel: Receiver<MarketPrice>,
     order_sender_channel: Sender<Order>,
     response_receiver_channel: Receiver<Response>,
+    metrics: ClientMetrics,
 }
 
 impl Engine {
@@ -36,10 +38,15 @@ impl Engine {
             price_receiver_channel,
             order_sender_channel,
             response_receiver_channel,
+            metrics: ClientMetrics::new(id),
         }
     }
 
     pub async fn run(mut self, token: CancellationToken) -> Result<()> {
+        for asset in self.inventory.assets() {
+            self.record_asset_metrics(&asset);
+        }
+
         loop {
             select! {
                 biased;
@@ -79,25 +86,19 @@ impl Engine {
                             };
 
                             let result = match order.side {
-                                OrderType::Buy => self.inventory.apply_buy(
-                                    order.instrument.base(),
-                                    order.instrument.quote(),
-                                    fill_size,
-                                    fill_price,
-                                    order.price,
-                                ),
-                                OrderType::Sell => self.inventory.apply_sell(
-                                    order.instrument.base(),
-                                    order.instrument.quote(),
-                                    fill_size,
-                                    fill_price,
-                                ),
+                                OrderType::Buy => self.inventory.apply_buy(&order, fill_size, fill_price),
+                                OrderType::Sell => self.inventory.apply_sell(&order, fill_size, fill_price),
                             };
 
                             match result {
                                 Ok(()) => {
+                                    self.metrics.record_trade(&order, fill_size);
+                                    self.record_asset_metrics(order.instrument.base());
+                                    self.record_asset_metrics(order.instrument.quote());
+
                                     if trade.remaining == 0 {
                                         self.open_orders.remove(&trade.order_id);
+                                        self.record_open_orders_metrics(&order.instrument);
                                     }
                                 }
                                 Err(error) => {
@@ -151,6 +152,8 @@ impl Engine {
                             }
 
                             self.open_orders.remove(&rejection.order_id);
+                            self.record_asset_metrics(asset);
+                            self.record_open_orders_metrics(&rejection.instrument);
 
                             warn!(
                                 client = %self.id,
@@ -209,21 +212,47 @@ impl Engine {
                         continue;
                     }
 
+                    self.record_asset_metrics(asset);
+
                     info!(%instrument, value, size, %side, client=%self.id, order=%order_id, "Created order");
 
                     if self.order_sender_channel.send(order.clone()).await.is_err() {
                         if let Err(error) = self.inventory.release(asset, amount) {
                             error!(client = %self.id, %error, %instrument, %side, size, value, "Failed to release unsent order inventory");
+                        } else {
+                            self.record_asset_metrics(asset);
                         }
                         error!(client = %self.id, "Order channel closed");
                         break;
                     }
 
+                    self.metrics.record_order_submitted(&order);
                     self.open_orders.insert(order.order_id, order);
+                    self.record_open_orders_metrics(&instrument);
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn record_asset_metrics(&self, asset: &Asset) {
+        if let Some(available) = self.inventory.available(asset) {
+            self.metrics.record_available(asset, available);
+        }
+
+        if let Some(reserved) = self.inventory.reserved(asset) {
+            self.metrics.record_reserved(asset, reserved);
+        }
+    }
+
+    fn record_open_orders_metrics(&self, instrument: &Instrument) {
+        let count = self
+            .open_orders
+            .values()
+            .filter(|order| &order.instrument == instrument)
+            .count() as u64;
+
+        self.metrics.record_open_orders(instrument, count);
     }
 }
