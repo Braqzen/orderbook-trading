@@ -12,6 +12,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 pub struct Engine {
+    instrument: Instrument,
     book: OrderBook,
     risk: RiskAnalyser,
     order_receiver: Receiver<Request>,
@@ -25,6 +26,7 @@ impl Engine {
         connection_registry: ConnectionRegistry,
     ) -> Self {
         Self {
+            instrument: instrument.clone(),
             book: OrderBook::new(),
             risk: RiskAnalyser::new(instrument),
             order_receiver,
@@ -41,7 +43,7 @@ impl Engine {
 
                 request = self.order_receiver.recv() => {
                     let Some(Request { instrument, price, order }) = request else {
-                        error!("Engine to orderbook api channel closed");
+                        error!(instrument = %self.instrument, "Engine to orderbook api channel closed");
                         break;
                     };
 
@@ -49,7 +51,7 @@ impl Engine {
                         Ok(()) => {}
                         Err(reason) => {
                             warn!(
-                                instrument = %instrument,
+                                instrument = %self.instrument,
                                 order = %order.order_id,
                                 ?reason,
                                 "Order rejected"
@@ -71,6 +73,7 @@ impl Engine {
                     let filled_size = order.size - remaining;
 
                     info!(
+                        instrument = %self.instrument,
                         limit_price = %price,
                         requested_size = order.size,
                         filled_size,
@@ -103,16 +106,16 @@ impl Engine {
             Some(client) => match client.try_send(response) {
                 Ok(()) => {}
                 Err(TrySendError::Closed(_)) => {
-                    warn!(client = %client_id, "Client is not connected");
+                    warn!(instrument = %self.instrument, client = %client_id, "Client is not connected");
                 }
                 Err(TrySendError::Full(_)) => {
-                    warn!(client = %client_id, "Client outbound queue full");
+                    warn!(instrument = %self.instrument, client = %client_id, "Client outbound queue full");
                     client.disconnect();
                     self.connection_registry.write().await.remove(&client_id);
                 }
             },
             None => {
-                warn!(client = %client_id, "Client is not connected");
+                warn!(instrument = %self.instrument, client = %client_id, "Client is not connected");
             }
         }
     }

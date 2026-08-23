@@ -1,5 +1,5 @@
 use crate::{
-    api::{MarketPrice, request::ClientRequest},
+    api::market::{MarketPrice, request::ClientRequest},
     trade::Instrument,
 };
 use eyre::Result;
@@ -14,7 +14,7 @@ use uuid::Uuid;
 pub struct MarketFeed {
     client_id: Uuid,
     url: String,
-    instruments: Vec<String>,
+    instruments: Vec<Instrument>,
     price_sender_channel: Sender<MarketPrice>,
 }
 
@@ -22,7 +22,7 @@ impl MarketFeed {
     pub fn new(
         client_id: Uuid,
         url: String,
-        instruments: Vec<String>,
+        instruments: Vec<Instrument>,
         price_sender_channel: Sender<MarketPrice>,
     ) -> Self {
         Self {
@@ -36,7 +36,12 @@ impl MarketFeed {
     pub async fn run(self, token: CancellationToken) -> Result<()> {
         let (mut stream, _response) = connect_async(self.url.clone()).await?;
 
-        let subscribe = ClientRequest::subscribe(self.instruments.clone());
+        let subscribe = ClientRequest::subscribe(
+            self.instruments
+                .iter()
+                .map(|instrument| instrument.to_string())
+                .collect(),
+        );
         let payload = serde_json::to_string(&subscribe)?;
         stream.send(Message::Text(payload.into())).await?;
 

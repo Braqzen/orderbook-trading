@@ -4,6 +4,18 @@ x-common-env-telemetry: &common-env-telemetry
   OTEL_METRIC_EXPORT_INTERVAL: "1000"
   PYROSCOPE_URL: http://telemetry-alloy:9999
 
+x-orderbook-env: &orderbook-env
+  RUST_LOG: info
+  WS: 0.0.0.0:8002
+  <<: *common-env-telemetry
+
+x-orderbook: &orderbook
+  image: orderbook-trading-orderbook:latest
+  depends_on:
+    telemetry-alloy:
+      condition: service_started
+  restart: unless-stopped
+
 services:
   generator:
     image: orderbook-trading-generator:latest
@@ -37,28 +49,53 @@ services:
       RUST_LOG: info
       CONFIG_PATH: /app/config/client.json
       MARKET_FEED_URL: ws://market-feed:8001
-      ORDERBOOK_URL: ws://orderbook:8002
       <<: *common-env-telemetry
     depends_on:
       telemetry-alloy:
         condition: service_started
       market-feed:
         condition: service_started
-      orderbook:
+      orderbook-eth:
+        condition: service_started
+      orderbook-btc:
+        condition: service_started
+      orderbook-sol:
+        condition: service_started
+      orderbook-xmr:
+        condition: service_started
+      orderbook-xrp:
         condition: service_started
     restart: unless-stopped
 
-  orderbook:
-    image: orderbook-trading-orderbook:latest
+  orderbook-eth:
+    <<: *orderbook
     environment:
-      RUST_LOG: info
+      <<: *orderbook-env
       INSTRUMENT: "ETH-USD"
-      WS: 0.0.0.0:8002
-      <<: *common-env-telemetry
-    depends_on:
-      telemetry-alloy:
-        condition: service_started
-    restart: unless-stopped
+
+  orderbook-btc:
+    <<: *orderbook
+    environment:
+      <<: *orderbook-env
+      INSTRUMENT: "BTC-USD"
+
+  orderbook-sol:
+    <<: *orderbook
+    environment:
+      <<: *orderbook-env
+      INSTRUMENT: "SOL-USD"
+
+  orderbook-xmr:
+    <<: *orderbook
+    environment:
+      <<: *orderbook-env
+      INSTRUMENT: "XMR-USD"
+
+  orderbook-xrp:
+    <<: *orderbook
+    environment:
+      <<: *orderbook-env
+      INSTRUMENT: "XRP-USD"
 
   telemetry-grafana:
     image: grafana/grafana:12.2

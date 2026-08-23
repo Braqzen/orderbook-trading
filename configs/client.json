@@ -1,5 +1,11 @@
 {
-  "instrument": ["ETH-USD", "BTC-USD", "SOL-USD", "XMR-USD", "XRP-USD"],
+  "instrument": {
+    "ETH-USD": "ws://orderbook-eth:8002",
+    "BTC-USD": "ws://orderbook-btc:8002",
+    "SOL-USD": "ws://orderbook-sol:8002",
+    "XMR-USD": "ws://orderbook-xmr:8002",
+    "XRP-USD": "ws://orderbook-xrp:8002"
+  },
   "inventory": [
     {
       "symbol": "ETH",
@@ -19,6 +25,11 @@
     {
       "symbol": "XMR",
       "upper_limit": 50,
+      "lower_limit": 0
+    },
+    {
+      "symbol": "XRP",
+      "upper_limit": 5000,
       "lower_limit": 0
     },
     {

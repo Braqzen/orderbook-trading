@@ -16,13 +16,15 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 pub struct Worker {
+    client_id: Uuid,
     market_feed: MarketFeed,
     orderbook: OrderBook,
     engine: Engine,
 }
 
 impl Worker {
-    pub fn new(client_id: Uuid, market: String, orderbook: String, config: Config) -> Result<Self> {
+    pub fn new(client_id: Uuid, market: String, config: Config) -> Result<Self> {
+        let instrument_urls = config.instruments.clone();
         let randomiser = Randomiser::new(config)?;
         let inventory = randomiser.inventory()?;
         let instruments = randomiser.instruments();
@@ -31,13 +33,15 @@ impl Worker {
         let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
         let (response_sender_channel, response_receiver_channel) = mpsc::channel(128);
 
-        let market_feed = MarketFeed::new(client_id, market, instruments, price_sender_channel);
+        let market_feed =
+            MarketFeed::new(client_id, market, instruments.clone(), price_sender_channel);
         let orderbook = OrderBook::new(
             client_id,
-            orderbook,
+            instruments,
+            instrument_urls,
             order_receiver_channel,
             response_sender_channel,
-        );
+        )?;
         let engine = Engine::new(
             client_id,
             inventory,
@@ -47,6 +51,7 @@ impl Worker {
         );
 
         Ok(Self {
+            client_id,
             market_feed,
             orderbook,
             engine,
@@ -71,25 +76,25 @@ impl Worker {
         tasks.spawn(self.market_feed.run(feed_token));
 
         select! {
-            Some(result) = tasks.join_next() => log_task_result(result),
-            _ = sigint.recv() => info!("Received interrupt signal"),
-            _ = sigterm.recv() => info!("Received terminate signal"),
+            Some(result) = tasks.join_next() => log_task_result(&self.client_id, result),
+            _ = sigint.recv() => info!(client = %self.client_id, "Received interrupt signal"),
+            _ = sigterm.recv() => info!(client = %self.client_id, "Received terminate signal"),
         }
 
         token.cancel();
 
         while let Some(result) = tasks.join_next().await {
-            log_task_result(result);
+            log_task_result(&self.client_id, result);
         }
 
         Ok(())
     }
 }
 
-fn log_task_result(result: std::result::Result<Result<()>, JoinError>) {
+fn log_task_result(client_id: &Uuid, result: std::result::Result<Result<()>, JoinError>) {
     match result {
         Ok(Ok(())) => {}
-        Ok(Err(error)) => error!(%error, "Service failed"),
-        Err(error) => error!(%error, "Service task failed"),
+        Ok(Err(error)) => error!(client = %client_id, %error, "Service failed"),
+        Err(error) => error!(client = %client_id, %error, "Service task failed"),
     }
 }

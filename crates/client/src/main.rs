@@ -18,10 +18,9 @@ async fn main() -> Result<()> {
 
     let config_path = std::env::var("CONFIG_PATH")?;
     let market = std::env::var("MARKET_FEED_URL")?;
-    let orderbook = std::env::var("ORDERBOOK_URL")?;
     let config = Config::new(config_path)?;
 
-    let worker = Worker::new(client_id, market, orderbook, config)?;
+    let worker = Worker::new(client_id, market, config)?;
     let result = worker.run().await;
 
     logger.shutdown()?;

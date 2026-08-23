@@ -1,6 +1,6 @@
 use crate::{
     api::{ConnectionRegistry, connection::Connection},
-    trade::Request,
+    trade::{Instrument, Request},
 };
 use eyre::Result;
 use std::net::SocketAddr;
@@ -16,6 +16,7 @@ use tracing::error;
 pub struct WsServer {
     /// Bind the server to this socket
     socket: SocketAddr,
+    instrument: Instrument,
     /// Send order requests from a client to the trading engine
     order_sender_channel: Sender<Request>,
     /// Track which clients are currently connected so we can stream their trades to them
@@ -25,11 +26,13 @@ pub struct WsServer {
 impl WsServer {
     pub fn new(
         socket: SocketAddr,
+        instrument: Instrument,
         order_sender_channel: Sender<Request>,
         connection_registry: ConnectionRegistry,
     ) -> Self {
         Self {
             socket,
+            instrument,
             order_sender_channel,
             connection_registry,
         }
@@ -48,7 +51,7 @@ impl WsServer {
                     let (stream, _) = match connection {
                         Ok(value) => value,
                         Err(error) => {
-                            error!(%error, "Failed to accept WebSocket connection");
+                            error!(instrument = %self.instrument, %error, "Failed to accept WebSocket connection");
                             continue;
                         }
                     };
@@ -56,6 +59,7 @@ impl WsServer {
                     connections.spawn(
                         Connection::new(
                             stream,
+                            self.instrument.clone(),
                             self.order_sender_channel.clone(),
                             token.child_token(),
                             self.connection_registry.clone(),
@@ -67,7 +71,7 @@ impl WsServer {
                 // Disconnected clients are (error) logged
                 connection_ended = connections.join_next(), if !connections.is_empty() => {
                     if let Some(result) = connection_ended {
-                        log_connection_result(result);
+                        log_connection_result(&self.instrument, result);
                     }
                 }
             }
@@ -76,17 +80,20 @@ impl WsServer {
         token.cancel();
 
         while let Some(result) = connections.join_next().await {
-            log_connection_result(result);
+            log_connection_result(&self.instrument, result);
         }
 
         Ok(())
     }
 }
 
-fn log_connection_result(result: std::result::Result<Result<()>, JoinError>) {
+fn log_connection_result(
+    instrument: &Instrument,
+    result: std::result::Result<Result<()>, JoinError>,
+) {
     match result {
         Ok(Ok(())) => {}
-        Ok(Err(error)) => error!(%error, "WebSocket connection failed"),
-        Err(error) => error!(%error, "WebSocket connection task failed"),
+        Ok(Err(error)) => error!(%instrument, %error, "WebSocket connection failed"),
+        Err(error) => error!(%instrument, %error, "WebSocket connection task failed"),
     }
 }
