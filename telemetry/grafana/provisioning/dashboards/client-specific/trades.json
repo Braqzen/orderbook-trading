@@ -15,7 +15,6 @@
       }
     ]
   },
-  "description": "Open orders per instrument as reported by the clients",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -84,7 +83,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 12,
         "x": 0,
         "y": 0
@@ -95,7 +94,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -110,16 +109,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "editorMode": "builder",
-          "expr": "client_orders_open{instrument=\"BTC-USD\"}",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "{{client}}",
+          "editorMode": "code",
+          "expr": "sum(client_trades_total{client=\"$client\"})",
+          "legendFormat": "Count",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "BTC-USD Open Orders",
+      "title": "Trade Count: Total",
       "type": "timeseries"
     },
     {
@@ -185,7 +182,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 12,
         "x": 12,
         "y": 0
@@ -212,15 +209,13 @@
             "uid": "prometheus"
           },
           "editorMode": "builder",
-          "expr": "client_orders_open{instrument=\"ETH-USD\"}",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "{{client}}",
+          "expr": "sum by(side) (client_trades_total{client=\"$client\"})",
+          "legendFormat": "{{side}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "ETH-USD Open Orders",
+      "title": "Trade Count: Side",
       "type": "timeseries"
     },
     {
@@ -286,10 +281,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 9,
+        "w": 8,
         "x": 0,
-        "y": 8
+        "y": 9
       },
       "id": 3,
       "options": {
@@ -312,16 +307,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "editorMode": "builder",
-          "expr": "client_orders_open{instrument=\"SOL-USD\"}",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "{{client}}",
+          "editorMode": "code",
+          "expr": "sum by (instrument) (client_trades_total{client=\"$client\"})",
+          "legendFormat": "{{side}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "SOL-USD Open Orders",
+      "title": "Trade Count: Instrument Total",
       "type": "timeseries"
     },
     {
@@ -387,10 +380,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 9
       },
       "id": 4,
       "options": {
@@ -413,16 +406,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "editorMode": "builder",
-          "expr": "client_orders_open{instrument=\"XMR-USD\"}",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "{{client}}",
+          "editorMode": "code",
+          "expr": "sum by (instrument) (client_trades_total{client=\"$client\", side=\"Buy\"})",
+          "legendFormat": "{{side}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "XMR-USD Open Orders",
+      "title": "Trade Count: Instrument Buy",
       "type": "timeseries"
     },
     {
@@ -488,10 +479,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 16
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 9
       },
       "id": 5,
       "options": {
@@ -514,16 +505,311 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "editorMode": "builder",
-          "expr": "client_orders_open{instrument=\"XRP-USD\"}",
-          "hide": false,
-          "instant": false,
-          "legendFormat": "{{client}}",
+          "editorMode": "code",
+          "expr": "sum by (instrument) (client_trades_total{client=\"$client\", side=\"Sell\"})",
+          "legendFormat": "{{side}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "XRP-USD Open Orders",
+      "title": "Trade Count: Instrument Sell",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": true,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisGridShow": true,
+            "axisLabel": "Count",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 18
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.2.10",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "builder",
+          "expr": "sum by(instrument) (client_trade_quantity_total{client=\"$client\"})",
+          "legendFormat": "{{side}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Trade Quantity: Instrument Total",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": true,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisGridShow": true,
+            "axisLabel": "Count",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 18
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.2.10",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by(instrument) (client_trade_quantity_total{client=\"$client\", side=\"Buy\"})",
+          "legendFormat": "{{side}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Trade Quantity: Instrument Buy",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": true,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisGridShow": true,
+            "axisLabel": "Count",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 18
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "12.2.10",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by(instrument) (client_trade_quantity_total{client=\"$client\", side=\"Sell\"})",
+          "legendFormat": "{{side}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Trade Quantity: Instrument Sell",
       "type": "timeseries"
     }
   ],
@@ -532,7 +818,31 @@
   "schemaVersion": 42,
   "tags": [],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "allowCustomValue": false,
+        "current": {
+          "text": "50921a0a-db75-4056-9a24-5838043c1687",
+          "value": "50921a0a-db75-4056-9a24-5838043c1687"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(client_inventory_available,client)",
+        "label": "Client",
+        "name": "client",
+        "options": [],
+        "query": {
+          "qryType": 1,
+          "query": "label_values(client_inventory_available,client)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-15m",
@@ -540,6 +850,6 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Client Overview: Open Orders",
+  "title": "Trades",
   "version": 0
 }
