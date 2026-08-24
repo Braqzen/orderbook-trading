@@ -1,6 +1,6 @@
 use crate::{
     api::request::{ClientRequest, Instruction, Operation},
-    metrics::MarketFeedMetrics,
+    metrics::MarketDataProviderMetrics,
     proto::PriceUpdate,
 };
 use eyre::Result;
@@ -20,7 +20,7 @@ pub struct Connection {
     client: SocketAddr,
     price_receiver_channel: Receiver<PriceUpdate>,
     token: CancellationToken,
-    metrics: MarketFeedMetrics,
+    metrics: MarketDataProviderMetrics,
 }
 
 impl Connection {
@@ -29,7 +29,7 @@ impl Connection {
         client: SocketAddr,
         price_receiver_channel: Receiver<PriceUpdate>,
         token: CancellationToken,
-        metrics: MarketFeedMetrics,
+        metrics: MarketDataProviderMetrics,
     ) -> Self {
         Self {
             stream,

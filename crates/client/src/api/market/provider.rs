@@ -1,5 +1,6 @@
 use crate::{
     api::market::{MarketPrice, request::ClientRequest},
+    metrics::ClientMetrics,
     trade::Instrument,
 };
 use eyre::Result;
@@ -11,25 +12,28 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-pub struct MarketFeed {
+pub struct MarketDataProvider {
     client_id: Uuid,
     url: String,
     instruments: Vec<Instrument>,
     price_sender_channel: Sender<MarketPrice>,
+    metrics: ClientMetrics,
 }
 
-impl MarketFeed {
+impl MarketDataProvider {
     pub fn new(
         client_id: Uuid,
         url: String,
         instruments: Vec<Instrument>,
         price_sender_channel: Sender<MarketPrice>,
+        metrics: ClientMetrics,
     ) -> Self {
         Self {
             client_id,
             url,
             instruments,
             price_sender_channel,
+            metrics,
         }
     }
 
@@ -45,7 +49,11 @@ impl MarketFeed {
         let payload = serde_json::to_string(&subscribe)?;
         stream.send(Message::Text(payload.into())).await?;
 
-        info!(client = %self.client_id, instruments = ?self.instruments, "Subscribed to market feed");
+        for instrument in &self.instruments {
+            self.metrics.record_subscription(instrument, true);
+        }
+
+        info!(client = %self.client_id, instruments = ?self.instruments, "Subscribed to market data provider");
 
         loop {
             select! {
@@ -80,7 +88,7 @@ impl MarketFeed {
                             }
                         }
                         Some(Ok(Message::Close(_))) => {
-                            error!(client = %self.client_id, "Market service explicitly closed connection");
+                            error!(client = %self.client_id, "Market data provider explicitly closed connection");
                             break;
                         }
                         Some(Err(error)) => {
@@ -88,7 +96,7 @@ impl MarketFeed {
                             break;
                         }
                         None => {
-                            error!(client = %self.client_id, "Disconnected from market service");
+                            error!(client = %self.client_id, "Disconnected from market data provider");
                             break;
                         }
                         _ => {
@@ -99,8 +107,12 @@ impl MarketFeed {
             }
         }
 
+        for instrument in &self.instruments {
+            self.metrics.record_subscription(instrument, false);
+        }
+
         if let Err(error) = stream.close(None).await {
-            error!(client = %self.client_id, %error, "Failed to close market feed connection");
+            error!(client = %self.client_id, %error, "Failed to close market data provider connection");
         }
 
         Ok(())

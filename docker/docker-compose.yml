@@ -17,22 +17,22 @@ x-orderbook: &orderbook
   restart: unless-stopped
 
 services:
-  generator:
-    image: orderbook-trading-generator:latest
+  price-generator:
+    image: orderbook-trading-price-generator:latest
     environment:
       RUST_LOG: info
-      CONFIG_PATH: /app/config/generator.json
-      MARKET_FEED_URL: http://market-feed:8000
+      CONFIG_PATH: /app/config/price-generator.json
+      MARKET_DATA_PROVIDER_URL: http://market-data-provider:8000
       <<: *common-env-telemetry
     depends_on:
       telemetry-alloy:
         condition: service_started
-      market-feed:
+      market-data-provider:
         condition: service_started
     restart: unless-stopped
 
-  market-feed:
-    image: orderbook-trading-market-feed:latest
+  market-data-provider:
+    image: orderbook-trading-market-data-provider:latest
     environment:
       RUST_LOG: info
       SOCKET: 0.0.0.0:8000
@@ -48,12 +48,12 @@ services:
     environment:
       RUST_LOG: info
       CONFIG_PATH: /app/config/client.json
-      MARKET_FEED_URL: ws://market-feed:8001
+      MARKET_DATA_PROVIDER_URL: ws://market-data-provider:8001
       <<: *common-env-telemetry
     depends_on:
       telemetry-alloy:
         condition: service_started
-      market-feed:
+      market-data-provider:
         condition: service_started
       orderbook-eth:
         condition: service_started

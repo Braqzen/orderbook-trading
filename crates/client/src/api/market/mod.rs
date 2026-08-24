@@ -1,6 +1,6 @@
-mod feed;
 mod price;
+mod provider;
 mod request;
 
-pub use feed::MarketFeed;
 pub use price::MarketPrice;
+pub use provider::MarketDataProvider;

@@ -8,8 +8,8 @@ pub struct FeedMetrics {
 
 impl FeedMetrics {
     pub fn new() -> Self {
-        let meter = global::meter("generator");
-        let price = meter.f64_gauge("generator.price").build();
+        let meter = global::meter("price-generator");
+        let price = meter.f64_gauge("price_generator.price").build();
 
         Self { price }
     }

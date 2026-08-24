@@ -1,5 +1,5 @@
 mod market;
 mod orderbook;
 
-pub use market::{MarketFeed, MarketPrice};
+pub use market::{MarketDataProvider, MarketPrice};
 pub use orderbook::{OrderBook, Response};

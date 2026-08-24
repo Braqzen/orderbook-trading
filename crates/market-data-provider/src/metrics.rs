@@ -1,21 +1,21 @@
 use opentelemetry::{KeyValue, global, metrics::UpDownCounter};
 
 #[derive(Clone)]
-pub struct MarketFeedMetrics {
+pub struct MarketDataProviderMetrics {
     connected_clients: UpDownCounter<i64>,
     subscriptions: UpDownCounter<i64>,
 }
 
-impl MarketFeedMetrics {
+impl MarketDataProviderMetrics {
     pub fn new() -> Self {
-        let meter = global::meter("market-feed");
+        let meter = global::meter("market-data-provider");
 
         Self {
             connected_clients: meter
-                .i64_up_down_counter("market_feed.clients.connected")
+                .i64_up_down_counter("market_data_provider.clients.connected")
                 .build(),
             subscriptions: meter
-                .i64_up_down_counter("market_feed.subscriptions")
+                .i64_up_down_counter("market_data_provider.subscriptions")
                 .build(),
         }
     }

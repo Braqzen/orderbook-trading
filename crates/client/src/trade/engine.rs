@@ -30,6 +30,7 @@ impl Engine {
         price_receiver_channel: Receiver<MarketPrice>,
         order_sender_channel: Sender<Order>,
         response_receiver_channel: Receiver<Response>,
+        metrics: ClientMetrics,
     ) -> Self {
         Self {
             id,
@@ -38,7 +39,7 @@ impl Engine {
             price_receiver_channel,
             order_sender_channel,
             response_receiver_channel,
-            metrics: ClientMetrics::new(id),
+            metrics,
         }
     }
 
@@ -168,7 +169,7 @@ impl Engine {
 
                 price = self.price_receiver_channel.recv() => {
                     let Some(MarketPrice { instrument, value }) = price else {
-                        error!(client = %self.id, "Market feed channel closed");
+                        error!(client = %self.id, "Market data provider channel closed");
                         break;
                     };
 

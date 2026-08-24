@@ -1,7 +1,7 @@
 use crate::{
     api::WsServer,
-    grpc::MyGeneratorFeed,
-    proto::{PriceUpdate, generator_feed_server::GeneratorFeedServer},
+    grpc::MarketDataProviderService,
+    proto::{PriceUpdate, market_data_provider_server::MarketDataProviderServer},
     state::State,
 };
 use eyre::Result;
@@ -48,12 +48,12 @@ impl Worker {
         let grpc_token = token.child_token();
         let ws_token = token.child_token();
 
-        let generator_feed = MyGeneratorFeed::new(self.state);
+        let market_data_provider = MarketDataProviderService::new(self.state);
         let mut tasks = JoinSet::new();
 
         tasks.spawn(async move {
             let result: Result<()> = Server::builder()
-                .add_service(GeneratorFeedServer::new(generator_feed))
+                .add_service(MarketDataProviderServer::new(market_data_provider))
                 .serve_with_incoming_shutdown(
                     TcpListenerStream::new(listener),
                     grpc_token.cancelled_owned(),

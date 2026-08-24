@@ -13,19 +13,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends protobuf-compil
 COPY --from=planner /app/recipe.json recipe.json
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
-    cargo chef cook --release --package market-feed --recipe-path recipe.json
+    cargo chef cook --release --package market-data-provider --recipe-path recipe.json
 COPY Cargo.toml Cargo.toml
 COPY proto proto
-COPY crates/market-feed crates/market-feed
+COPY crates/market-data-provider crates/market-data-provider
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
-    cargo build --release -p market-feed \
-    && cp /app/target/release/market-feed /app/market-feed
+    cargo build --release -p market-data-provider \
+    && cp /app/target/release/market-data-provider /app/market-data-provider
 
 FROM debian:bookworm-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/market-feed /app/server
+COPY --from=builder /app/market-data-provider /app/server
 CMD ["/app/server"]

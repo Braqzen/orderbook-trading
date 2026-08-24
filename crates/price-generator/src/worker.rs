@@ -22,12 +22,12 @@ const SPAWN_JITTER_MS: u64 = 5;
 
 pub struct Worker {
     publish_interval: u64,
-    market_feed_url: String,
+    market_data_provider_url: String,
     price_managers: Vec<PriceManager>,
 }
 
 impl Worker {
-    pub fn new(market_feed_url: String, config: Config) -> Result<Self> {
+    pub fn new(market_data_provider_url: String, config: Config) -> Result<Self> {
         let price_managers = config
             .feeds
             .iter()
@@ -39,7 +39,7 @@ impl Worker {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
-            market_feed_url,
+            market_data_provider_url,
             publish_interval: PUBLISH_INTERVAL,
             price_managers,
         })
@@ -56,7 +56,7 @@ impl Worker {
         let mut tasks = JoinSet::new();
 
         let publisher_token = token.child_token();
-        let publisher = Publisher::new(self.market_feed_url, price_receiver_channel);
+        let publisher = Publisher::new(self.market_data_provider_url, price_receiver_channel);
         tasks.spawn(publisher.run(publisher_token));
 
         for price_manager in self.price_managers.into_iter() {

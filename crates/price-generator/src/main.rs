@@ -1,31 +1,32 @@
-mod api;
-mod grpc;
+mod config;
+mod feed;
+mod instrument;
 mod metrics;
-mod state;
+mod price;
+mod publisher;
 mod worker;
 
+use crate::{config::Config, worker::Worker};
 use eyre::Result;
 use maiya::{Resource, logs::Logger, metrics::Metrics};
-use std::{net::SocketAddr, str::FromStr};
-use worker::Worker;
 
 pub mod proto {
-    tonic::include_proto!("generatorfeed");
+    tonic::include_proto!("marketdataprovider");
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let resource = Resource::builder().with_service_name("market-feed").build();
-    let logger = Logger::new(&resource, "market-feed")?;
+    let resource = Resource::builder()
+        .with_service_name("price-generator")
+        .build();
+    let logger = Logger::new(&resource, "price-generator")?;
     let metrics = Metrics::new(&resource)?;
 
-    let ws = std::env::var("WS")?;
-    let socket = std::env::var("SOCKET")?;
+    let market_data_provider_url = std::env::var("MARKET_DATA_PROVIDER_URL")?;
+    let config_path = std::env::var("CONFIG_PATH")?;
+    let config = Config::new(config_path)?;
 
-    let ws = SocketAddr::from_str(&ws)?;
-    let socket = SocketAddr::from_str(&socket)?;
-
-    let worker = Worker::new(socket, ws);
+    let worker = Worker::new(market_data_provider_url, config)?;
     let result = worker.run().await;
 
     let logger_shutdown = logger.shutdown();

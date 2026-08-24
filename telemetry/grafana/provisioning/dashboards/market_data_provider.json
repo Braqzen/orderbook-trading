@@ -18,6 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
+  "id": 4,
   "links": [],
   "panels": [
     {
@@ -110,7 +111,7 @@
             "uid": "prometheus"
           },
           "editorMode": "builder",
-          "expr": "market_feed_clients_connected",
+          "expr": "market_data_provider_clients_connected",
           "legendFormat": "connections",
           "range": true,
           "refId": "A"
@@ -209,7 +210,7 @@
             "uid": "prometheus"
           },
           "editorMode": "builder",
-          "expr": "market_feed_subscriptions",
+          "expr": "market_data_provider_subscriptions",
           "legendFormat": "{{instrument}}",
           "range": true,
           "refId": "A"
@@ -232,6 +233,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Market Feed Connections",
-  "version": 0
+  "title": "Market Data Provider",
+  "uid": "4b1bc1c9-bcad-4a4e-9a80-dd03f659caaa",
+  "version": 1
 }

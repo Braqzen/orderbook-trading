@@ -922,10 +922,6 @@
     "list": [
       {
         "allowCustomValue": false,
-        "current": {
-          "text": "0a93d43b-beab-4e51-8eb8-385bf765fd2d",
-          "value": "0a93d43b-beab-4e51-8eb8-385bf765fd2d"
-        },
         "datasource": {
           "type": "prometheus",
           "uid": "prometheus"

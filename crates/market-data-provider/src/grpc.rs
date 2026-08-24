@@ -1,5 +1,5 @@
 use crate::{
-    proto::{PriceUpdate, generator_feed_server::GeneratorFeed},
+    proto::{PriceUpdate, market_data_provider_server::MarketDataProvider},
     state::State,
 };
 use eyre::Result;
@@ -7,18 +7,18 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status, Streaming};
 use tracing::info;
 
-pub struct MyGeneratorFeed {
+pub struct MarketDataProviderService {
     pub state: Arc<State>,
 }
 
-impl MyGeneratorFeed {
+impl MarketDataProviderService {
     pub fn new(state: Arc<State>) -> Self {
         Self { state }
     }
 }
 
 #[tonic::async_trait]
-impl GeneratorFeed for MyGeneratorFeed {
+impl MarketDataProvider for MarketDataProviderService {
     async fn publish_price(
         &self,
         request: Request<Streaming<PriceUpdate>>,

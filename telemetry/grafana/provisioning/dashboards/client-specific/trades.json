@@ -821,10 +821,6 @@
     "list": [
       {
         "allowCustomValue": false,
-        "current": {
-          "text": "50921a0a-db75-4056-9a24-5838043c1687",
-          "value": "50921a0a-db75-4056-9a24-5838043c1687"
-        },
         "datasource": {
           "type": "prometheus",
           "uid": "prometheus"

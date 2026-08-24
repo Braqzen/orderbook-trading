@@ -1,13 +1,13 @@
-default: build-generator build-market-feed build-client build-orderbook
+default: build-price-generator build-market-data-provider build-client build-orderbook
 
-build: build-generator build-market-feed build-client build-orderbook
+build: build-price-generator build-market-data-provider build-client build-orderbook
 
 # Rust
-build-generator:
-	docker build -f docker/Dockerfile.generator -t orderbook-trading-generator:latest .
+build-price-generator:
+	docker build -f docker/Dockerfile.price-generator -t orderbook-trading-price-generator:latest .
 
-build-market-feed:
-	docker build -f docker/Dockerfile.market-feed -t orderbook-trading-market-feed:latest .
+build-market-data-provider:
+	docker build -f docker/Dockerfile.market-data-provider -t orderbook-trading-market-data-provider:latest .
 
 build-client:
 	docker build -f docker/Dockerfile.client -t orderbook-trading-client:latest .

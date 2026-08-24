@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/client", 
-    "crates/generator", 
-    "crates/market-feed", 
-    "crates/orderbook", 
+    "crates/client",
+    "crates/price-generator",
+    "crates/market-data-provider",
+    "crates/orderbook",
 ]
 
 [workspace.dependencies]
@@ -26,5 +26,5 @@ tokio-tungstenite = "0.30.0"
 tracing = "0.1"
 uuid = { version = "1.24.0", features = ["v4", "serde"] }
 
-[profile.release.package.generator]
+[profile.release.package.price-generator]
 debug = 1

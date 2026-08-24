@@ -11,6 +11,7 @@ pub struct ClientMetrics {
     available: Gauge<f64>,
     reserved: Gauge<f64>,
     open_orders: Gauge<u64>,
+    subscriptions: Gauge<u64>,
     orders_submitted: Counter<u64>,
     trades: Counter<u64>,
     trade_quantity: Counter<f64>,
@@ -25,6 +26,7 @@ impl ClientMetrics {
             available: meter.f64_gauge("client.inventory.available").build(),
             reserved: meter.f64_gauge("client.inventory.reserved").build(),
             open_orders: meter.u64_gauge("client.orders.open").build(),
+            subscriptions: meter.u64_gauge("client.subscriptions").build(),
             orders_submitted: meter.u64_counter("client.orders.submitted_total").build(),
             trades: meter.u64_counter("client.trades_total").build(),
             trade_quantity: meter.f64_counter("client.trade.quantity_total").build(),
@@ -54,6 +56,16 @@ impl ClientMetrics {
     pub fn record_open_orders(&self, instrument: &Instrument, count: u64) {
         self.open_orders.record(
             count,
+            &[
+                KeyValue::new("client", self.client_id.clone()),
+                KeyValue::new("instrument", instrument.to_string()),
+            ],
+        );
+    }
+
+    pub fn record_subscription(&self, instrument: &Instrument, subscribed: bool) {
+        self.subscriptions.record(
+            u64::from(subscribed),
             &[
                 KeyValue::new("client", self.client_id.clone()),
                 KeyValue::new("instrument", instrument.to_string()),

@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-package generatorfeed;
+package marketdataprovider;
 
 import "google/protobuf/empty.proto";
 
-service GeneratorFeed {
+service MarketDataProvider {
   rpc PublishPrice (stream PriceUpdate) returns (google.protobuf.Empty);
 }
 

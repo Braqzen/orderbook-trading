@@ -19,10 +19,10 @@ async fn main() -> Result<()> {
     let metrics = Metrics::new(&resource)?;
 
     let config_path = std::env::var("CONFIG_PATH")?;
-    let market = std::env::var("MARKET_FEED_URL")?;
+    let market_data_provider_url = std::env::var("MARKET_DATA_PROVIDER_URL")?;
     let config = Config::new(config_path)?;
 
-    let worker = Worker::new(client_id, market, config)?;
+    let worker = Worker::new(client_id, market_data_provider_url, config)?;
     let result = worker.run().await;
 
     let logger_shutdown = logger.shutdown();
