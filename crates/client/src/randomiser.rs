@@ -4,6 +4,7 @@ use crate::{
 };
 use eyre::{Result, ensure, eyre};
 use rand::seq::SliceRandom;
+use std::collections::HashSet;
 
 const USD_SYMBOL: &str = "USD";
 const MIN_ASSETS: usize = 1;
@@ -33,6 +34,20 @@ impl Randomiser {
             "Config must contain at least one instrument"
         );
 
+        let inventory_assets: HashSet<&str> = config
+            .inventory
+            .iter()
+            .map(|entry| entry.symbol.as_str())
+            .collect();
+
+        for instrument in config.instruments.keys() {
+            ensure!(
+                inventory_assets.contains(instrument.base().as_str())
+                    && inventory_assets.contains(instrument.quote().as_str()),
+                "Config inventory must contain both assets for {instrument}"
+            );
+        }
+
         for entry in &config.inventory {
             ensure!(
                 entry.lower_limit.is_finite()
@@ -48,21 +63,22 @@ impl Randomiser {
         Ok(Self { config })
     }
 
-    pub fn inventory(&self) -> Result<Inventory> {
-        let (mut usd, mut assets): (Vec<_>, Vec<_>) = self
+    pub fn inventory(&self, instruments: &[Instrument]) -> Result<Inventory> {
+        let mut selected_assets = HashSet::from([USD_SYMBOL]);
+
+        for instrument in instruments {
+            selected_assets.insert(instrument.base().as_str());
+            selected_assets.insert(instrument.quote().as_str());
+        }
+
+        let entries = self
             .config
             .inventory
             .clone()
             .into_iter()
-            .partition(|entry| entry.symbol == USD_SYMBOL);
+            .filter(|entry| selected_assets.contains(entry.symbol.as_str()));
 
-        assets.shuffle(&mut rand::rng());
-        let asset_count = rand::random_range(MIN_ASSETS..=assets.len());
-        assets.truncate(asset_count);
-        usd.extend(assets);
-
-        let values = usd
-            .into_iter()
+        let values = entries
             .map(|entry| {
                 let amount = rand::random_range(entry.lower_limit..=entry.upper_limit);
                 let amount = Quantity::try_from(amount)
