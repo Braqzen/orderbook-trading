@@ -6,11 +6,3 @@ datasources:
     url: http://telemetry-loki:3100
     uid: loki
     isDefault: true
-    jsonData:
-      derivedFields:
-        - name: TraceID
-          matcherType: label
-          matcherRegex: trace_id
-          url: "$${__value.raw}"
-          urlDisplayLabel: View Trace
-          datasourceUid: tempo

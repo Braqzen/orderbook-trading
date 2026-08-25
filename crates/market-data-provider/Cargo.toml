@@ -1,0 +1,23 @@
+[package]
+name = "market-data-provider"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eyre.workspace = true
+futures-util.workspace = true
+maiya.workspace = true
+opentelemetry.workspace = true
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+
+[build-dependencies]
+tonic-prost-build.workspace = true

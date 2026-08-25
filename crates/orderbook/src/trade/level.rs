@@ -27,4 +27,8 @@ impl PriceLevel {
     pub fn is_empty(&self) -> bool {
         self.orders.is_empty()
     }
+
+    pub fn orders(&self) -> impl Iterator<Item = &LimitOrder> {
+        self.orders.iter()
+    }
 }

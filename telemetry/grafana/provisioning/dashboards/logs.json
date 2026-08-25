@@ -159,7 +159,7 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"generator\"} !~ `Sent price`",
+          "expr": "{service_name=\"price-generator\"} !~ `Sent price`",
           "hide": false,
           "queryType": "range",
           "refId": "B"
@@ -171,13 +171,13 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"generator\"} |= `Sent price` | line_format \"Sent Price: {{.instrument}} ${{.price}}\"",
+          "expr": "{service_name=\"price-generator\"} |= `Sent price` | line_format \"Sent Price: {{.instrument}} ${{.price}}\"",
           "hide": false,
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "Generator",
+      "title": "Price Generator",
       "type": "logs"
     },
     {
@@ -216,7 +216,7 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"market-feed\"} |= `Price update` | line_format \"Price Update: {{.instrument}} ${{.price}}\"",
+          "expr": "{service_name=\"market-data-provider\"} |= `Price update` | line_format \"Price Update: {{.instrument}} ${{.price}}\"",
           "hide": false,
           "queryType": "range",
           "refId": "B"
@@ -228,7 +228,7 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"market-feed\"} |= `Sending price` | line_format \"Sending Price: {{.instrument}} ${{.price}} | {{.client}}\"",
+          "expr": "{service_name=\"market-data-provider\"} |= `Sending price` | line_format \"Sending Price: {{.instrument}} ${{.price}} | {{.client}}\"",
           "hide": false,
           "queryType": "range",
           "refId": "C"
@@ -240,13 +240,13 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"market-feed\"} !~ `Price update|Sending price`",
+          "expr": "{service_name=\"market-data-provider\"} !~ `Price update|Sending price`",
           "hide": false,
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "Market Feed",
+      "title": "Market Data Provider",
       "type": "logs"
     }
   ],

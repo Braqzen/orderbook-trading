@@ -1,4 +1,4 @@
-use crate::trade::{Asset, Quantity};
+use crate::trade::{Asset, Order, Quantity};
 use std::collections::HashMap;
 
 pub struct Inventory {
@@ -21,6 +21,14 @@ impl Inventory {
 
     pub fn available(&self, asset: &Asset) -> Option<Quantity> {
         self.available.get(asset).copied()
+    }
+
+    pub fn reserved(&self, asset: &Asset) -> Option<Quantity> {
+        self.reserved.get(asset).copied()
+    }
+
+    pub fn assets(&self) -> Vec<Asset> {
+        self.available.keys().cloned().collect()
     }
 
     pub fn reserve(&mut self, asset: &Asset, amount: Quantity) -> Result<(), String> {
@@ -82,12 +90,14 @@ impl Inventory {
 
     pub fn apply_buy(
         &mut self,
-        base: &Asset,
-        quote: &Asset,
+        order: &Order,
         fill_size: Quantity,
         fill_price: f64,
-        limit_price: f64,
     ) -> Result<(), String> {
+        let base = order.instrument.base();
+        let quote = order.instrument.quote();
+        let limit_price = order.price;
+
         if fill_size <= Quantity::ZERO {
             return Err("fill size must be a positive finite value".to_owned());
         }
@@ -143,11 +153,13 @@ impl Inventory {
 
     pub fn apply_sell(
         &mut self,
-        base: &Asset,
-        quote: &Asset,
+        order: &Order,
         fill_size: Quantity,
         fill_price: f64,
     ) -> Result<(), String> {
+        let base = order.instrument.base();
+        let quote = order.instrument.quote();
+
         if fill_size <= Quantity::ZERO {
             return Err("fill size must be a positive finite value".to_owned());
         }

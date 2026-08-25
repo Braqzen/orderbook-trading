@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package marketdataprovider;
+
+import "google/protobuf/empty.proto";
+
+service MarketDataProvider {
+  rpc PublishPrice (stream PriceUpdate) returns (google.protobuf.Empty);
+}
+
+message PriceUpdate {
+  string instrument = 1;
+  double value = 2;
+}

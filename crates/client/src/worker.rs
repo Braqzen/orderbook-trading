@@ -1,6 +1,7 @@
 use crate::{
-    api::{MarketFeed, MarketPrice, OrderBook},
+    api::{MarketDataProvider, MarketPrice, OrderBook},
     config::Config,
+    metrics::ClientMetrics,
     randomiser::Randomiser,
     trade::Engine,
 };
@@ -17,24 +18,30 @@ use uuid::Uuid;
 
 pub struct Worker {
     client_id: Uuid,
-    market_feed: MarketFeed,
+    market_data_provider: MarketDataProvider,
     orderbook: OrderBook,
     engine: Engine,
 }
 
 impl Worker {
-    pub fn new(client_id: Uuid, market: String, config: Config) -> Result<Self> {
+    pub fn new(client_id: Uuid, market_data_provider_url: String, config: Config) -> Result<Self> {
         let instrument_urls = config.instruments.clone();
         let randomiser = Randomiser::new(config)?;
         let inventory = randomiser.inventory()?;
         let instruments = randomiser.instruments();
+        let metrics = ClientMetrics::new(client_id);
 
         let (price_sender_channel, price_receiver_channel) = mpsc::channel::<MarketPrice>(128);
         let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
         let (response_sender_channel, response_receiver_channel) = mpsc::channel(128);
 
-        let market_feed =
-            MarketFeed::new(client_id, market, instruments.clone(), price_sender_channel);
+        let market_data_provider = MarketDataProvider::new(
+            client_id,
+            market_data_provider_url,
+            instruments.clone(),
+            price_sender_channel,
+            metrics.clone(),
+        );
         let orderbook = OrderBook::new(
             client_id,
             instruments,
@@ -48,11 +55,12 @@ impl Worker {
             price_receiver_channel,
             order_sender_channel,
             response_receiver_channel,
+            metrics,
         );
 
         Ok(Self {
             client_id,
-            market_feed,
+            market_data_provider,
             orderbook,
             engine,
         })
@@ -65,7 +73,7 @@ impl Worker {
         let mut sigterm = signal(SignalKind::terminate())?;
 
         let token = CancellationToken::new();
-        let feed_token = token.child_token();
+        let provider_token = token.child_token();
         let book_token = token.child_token();
         let engine_token = token.child_token();
 
@@ -73,7 +81,7 @@ impl Worker {
 
         tasks.spawn(self.engine.run(engine_token));
         tasks.spawn(self.orderbook.run(book_token));
-        tasks.spawn(self.market_feed.run(feed_token));
+        tasks.spawn(self.market_data_provider.run(provider_token));
 
         select! {
             Some(result) = tasks.join_next() => log_task_result(&self.client_id, result),

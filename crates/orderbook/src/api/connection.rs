@@ -1,5 +1,6 @@
 use crate::{
     api::{Response, order::RawOrder},
+    metrics::OrderbookMetrics,
     trade::{Instrument, LimitOrder, Price, Request},
 };
 use eyre::Result;
@@ -62,6 +63,7 @@ pub struct Connection {
     token: CancellationToken,
     /// Shared connection registry for trade publishing
     connection_registry: ConnectionRegistry,
+    metrics: OrderbookMetrics,
 }
 
 impl Connection {
@@ -71,6 +73,7 @@ impl Connection {
         order_sender_channel: Sender<Request>,
         token: CancellationToken,
         connection_registry: ConnectionRegistry,
+        metrics: OrderbookMetrics,
     ) -> Self {
         Self {
             stream,
@@ -78,6 +81,7 @@ impl Connection {
             order_sender_channel,
             token,
             connection_registry,
+            metrics,
         }
     }
 
@@ -94,6 +98,7 @@ impl Connection {
         let (outbound_sender_channel, mut outbound_receiver_channel) =
             channel::<Response>(OUTBOUND_QUEUE_SIZE);
         let mut client_id = None;
+        self.metrics.client_connected();
 
         loop {
             select! {
@@ -148,14 +153,18 @@ impl Connection {
 
                             let order = LimitOrder::new(raw_order.size, raw_order.side, raw_order.client_id, raw_order.order_id);
                             let request = Request::new(instrument, price, order);
+                            let request_client_id = request.order.client_id;
 
+                            self.metrics.client_order_enqueued(request_client_id);
                             match client_order_sender.try_send(request) {
                                 Ok(()) => {}
                                 Err(TrySendError::Closed(_)) => {
+                                    self.metrics.client_order_dequeued(request_client_id);
                                     error!(instrument = %self.instrument, "Order channel closed");
                                     break;
                                 }
                                 Err(TrySendError::Full(_)) => {
+                                    self.metrics.client_order_dequeued(request_client_id);
                                     warn!(instrument = %self.instrument, "Client order queue full");
                                     break;
                                 }
@@ -175,13 +184,19 @@ impl Connection {
                     let Some(request) = request else {
                         break;
                     };
+                    let request_client_id = request.order.client_id;
+                    self.metrics.client_order_dequeued(request_client_id);
+                    self.metrics.global_order_enqueued();
+
                     match self.order_sender_channel.try_send(request) {
                         Ok(()) => {}
                         Err(TrySendError::Closed(_)) => {
+                            self.metrics.global_order_dequeued();
                             error!(instrument = %self.instrument, "Order channel closed");
                             break;
                         }
                         Err(TrySendError::Full(_)) => {
+                            self.metrics.global_order_dequeued();
                             warn!(instrument = %self.instrument, "Global order queue full");
                             break;
                         }
@@ -224,6 +239,11 @@ impl Connection {
 
         // Registry cleanup, remove client upon connection/task closure
         if let Some(client_id) = client_id {
+            let queued_orders = client_order_sender.max_capacity() - client_order_sender.capacity();
+            if queued_orders > 0 {
+                self.metrics.client_orders_dropped(client_id, queued_orders);
+            }
+
             let mut registry = self.connection_registry.write().await;
 
             let should_remove = match registry.get(&client_id) {
@@ -235,6 +255,8 @@ impl Connection {
                 registry.remove(&client_id);
             }
         }
+
+        self.metrics.client_disconnected();
 
         if let Err(error) = ws_stream.close(None).await {
             error!(instrument = %self.instrument, %error, "Failed to close WebSocket connection");

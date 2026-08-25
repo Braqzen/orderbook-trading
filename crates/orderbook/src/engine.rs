@@ -1,5 +1,6 @@
 use crate::{
     api::{ConnectionRegistry, Rejection, Response},
+    metrics::OrderbookMetrics,
     trade::{Instrument, OrderBook, Request, RiskAnalyser},
 };
 use eyre::Result;
@@ -17,6 +18,7 @@ pub struct Engine {
     risk: RiskAnalyser,
     order_receiver: Receiver<Request>,
     connection_registry: ConnectionRegistry,
+    metrics: OrderbookMetrics,
 }
 
 impl Engine {
@@ -24,6 +26,7 @@ impl Engine {
         instrument: Instrument,
         order_receiver: Receiver<Request>,
         connection_registry: ConnectionRegistry,
+        metrics: OrderbookMetrics,
     ) -> Self {
         Self {
             instrument: instrument.clone(),
@@ -31,6 +34,7 @@ impl Engine {
             risk: RiskAnalyser::new(instrument),
             order_receiver,
             connection_registry,
+            metrics,
         }
     }
 
@@ -46,6 +50,7 @@ impl Engine {
                         error!(instrument = %self.instrument, "Engine to orderbook api channel closed");
                         break;
                     };
+                    self.metrics.global_order_dequeued();
 
                     match self.risk.evaluate(&instrument, &order, &price) {
                         Ok(()) => {}
@@ -68,6 +73,11 @@ impl Engine {
                     }
 
                     let result = self.book.trade(price, order.clone());
+                    let trade_count = (result.trades.len() / 2) as u64;
+                    let trade_size =
+                        result.trades.iter().map(|(_, trade)| trade.size).sum::<u64>() / 2;
+                    self.metrics
+                        .record_orderbook(&self.book, trade_count, trade_size);
 
                     let remaining = result.remaining;
                     let filled_size = order.size - remaining;

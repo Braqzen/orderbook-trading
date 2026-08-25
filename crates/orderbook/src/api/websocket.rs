@@ -1,5 +1,6 @@
 use crate::{
     api::{ConnectionRegistry, connection::Connection},
+    metrics::OrderbookMetrics,
     trade::{Instrument, Request},
 };
 use eyre::Result;
@@ -21,6 +22,7 @@ pub struct WsServer {
     order_sender_channel: Sender<Request>,
     /// Track which clients are currently connected so we can stream their trades to them
     connection_registry: ConnectionRegistry,
+    metrics: OrderbookMetrics,
 }
 
 impl WsServer {
@@ -29,12 +31,14 @@ impl WsServer {
         instrument: Instrument,
         order_sender_channel: Sender<Request>,
         connection_registry: ConnectionRegistry,
+        metrics: OrderbookMetrics,
     ) -> Self {
         Self {
             socket,
             instrument,
             order_sender_channel,
             connection_registry,
+            metrics,
         }
     }
 
@@ -63,6 +67,7 @@ impl WsServer {
                             self.order_sender_channel.clone(),
                             token.child_token(),
                             self.connection_registry.clone(),
+                            self.metrics.clone(),
                         )
                         .run(),
                     );

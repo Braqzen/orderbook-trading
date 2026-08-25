@@ -47,6 +47,12 @@ impl Display for Instrument {
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
 pub struct Asset(String);
 
+impl Asset {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 impl From<String> for Asset {
     fn from(value: String) -> Self {
         Self(value)

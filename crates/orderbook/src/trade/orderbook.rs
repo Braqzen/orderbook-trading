@@ -95,4 +95,12 @@ impl OrderBook {
 
         TradeResult::new(trades, remaining)
     }
+
+    pub fn buy_levels(&self) -> impl DoubleEndedIterator<Item = (&Price, &PriceLevel)> {
+        self.buy.iter()
+    }
+
+    pub fn sell_levels(&self) -> impl DoubleEndedIterator<Item = (&Price, &PriceLevel)> {
+        self.sell.iter()
+    }
 }
