@@ -1,5 +1,0 @@
-analytics:
-  reporting_enabled: false
-
-pyroscopedb:
-  data_path: /data

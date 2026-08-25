@@ -2,7 +2,6 @@
 x-common-env-telemetry: &common-env-telemetry
   OTEL_EXPORTER_OTLP_ENDPOINT: http://telemetry-alloy:4318
   OTEL_METRIC_EXPORT_INTERVAL: "1000"
-  PYROSCOPE_URL: http://telemetry-alloy:9999
 
 x-orderbook-env: &orderbook-env
   RUST_LOG: info
@@ -116,9 +115,7 @@ services:
       - grafana-data-volume:/var/lib/grafana
     depends_on:
       - telemetry-loki
-      - telemetry-pyroscope
       - telemetry-prometheus
-      - telemetry-tempo
     restart: unless-stopped
 
   telemetry-prometheus:
@@ -143,26 +140,6 @@ services:
       - loki-data-volume:/loki
     restart: unless-stopped
 
-  telemetry-pyroscope:
-    image: grafana/pyroscope:2.0.4
-    ports:
-      - "4040:4040"
-    command: -config.file=/etc/pyroscope/pyroscope.yaml
-    volumes:
-      - ../telemetry/pyroscope/pyroscope.yaml:/etc/pyroscope/pyroscope.yaml
-      - pyroscope-data-volume:/data
-    restart: unless-stopped
-
-  telemetry-tempo:
-    image: grafana/tempo:3.0.2
-    ports:
-      - "3200:3200"
-    command: -config.file=/etc/tempo/tempo.yaml
-    volumes:
-      - ../telemetry/tempo/tempo.yaml:/etc/tempo/tempo.yaml
-      - tempo-data-volume:/var/tempo
-    restart: unless-stopped
-
   telemetry-alloy:
     image: grafana/alloy:v1.17.0
     volumes:
@@ -171,8 +148,6 @@ services:
     command: run --disable-reporting /etc/alloy/config.alloy
     depends_on:
       - telemetry-loki
-      - telemetry-tempo
-      - telemetry-pyroscope
       - telemetry-prometheus
     restart: unless-stopped
 
@@ -180,6 +155,4 @@ volumes:
   grafana-data-volume:
   loki-data-volume:
   prometheus-data-volume:
-  pyroscope-data-volume:
-  tempo-data-volume:
   alloy-data-volume:

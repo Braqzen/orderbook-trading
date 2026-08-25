@@ -9,17 +9,6 @@ otelcol.receiver.otlp "default" {
   output {
     logs    = [otelcol.exporter.otlphttp.loki.input]
     metrics = [otelcol.exporter.prometheus.default.input]
-    traces  = [otelcol.exporter.otlp.tempo.input]
-  }
-}
-
-// Send to tempo
-otelcol.exporter.otlp "tempo" {
-  client {
-    endpoint = "telemetry-tempo:4317"
-    tls {
-      insecure = true
-    }
   }
 }
 
@@ -42,20 +31,4 @@ prometheus.remote_write "default" {
   endpoint {
     url = "http://telemetry-prometheus:9090/api/v1/write"
   }
-}
-
-// Send to Pyroscope
-pyroscope.write "backend" {
-  endpoint {
-    url = "http://telemetry-pyroscope:4040"
-  }
-}
-
-// Listen for HTTP requests and forward to component
-pyroscope.receive_http "default" {
-  http {
-    listen_address = "0.0.0.0"
-    listen_port    = 9999
-  }
-  forward_to = [pyroscope.write.backend.receiver]
 }
