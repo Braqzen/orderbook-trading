@@ -73,6 +73,8 @@ impl Engine {
                     }
 
                     let result = self.book.trade(price, order.clone());
+                    self.metrics
+                        .record_orderbook(&self.book, (result.trades.len() / 2) as u64);
 
                     let remaining = result.remaining;
                     let filled_size = order.size - remaining;

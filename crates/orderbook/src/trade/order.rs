@@ -28,7 +28,7 @@ impl LimitOrder {
     }
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum OrderType {
     Buy,
     Sell,
