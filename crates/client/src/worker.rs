@@ -27,8 +27,8 @@ impl Worker {
     pub fn new(client_id: Uuid, market_data_provider_url: String, config: Config) -> Result<Self> {
         let instrument_urls = config.instruments.clone();
         let randomiser = Randomiser::new(config)?;
-        let inventory = randomiser.inventory()?;
         let instruments = randomiser.instruments();
+        let inventory = randomiser.inventory(&instruments)?;
         let metrics = ClientMetrics::new(client_id);
 
         let (price_sender_channel, price_receiver_channel) = mpsc::channel::<MarketPrice>(128);
