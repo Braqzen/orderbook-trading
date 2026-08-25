@@ -15,6 +15,7 @@ pub struct OrderbookMetrics {
     best_price: Gauge<u64>,
     worst_price: Gauge<u64>,
     trades: Counter<u64>,
+    trade_size: Counter<u64>,
 }
 
 impl OrderbookMetrics {
@@ -32,6 +33,7 @@ impl OrderbookMetrics {
             best_price: meter.u64_gauge("orderbook.price.best").build(),
             worst_price: meter.u64_gauge("orderbook.price.worst").build(),
             trades: meter.u64_counter("orderbook.trades_total").build(),
+            trade_size: meter.u64_counter("orderbook.trade.size_total").build(),
         }
     }
 
@@ -103,7 +105,7 @@ impl OrderbookMetrics {
         );
     }
 
-    pub fn record_orderbook(&self, book: &OrderBook, trades: u64) {
+    pub fn record_orderbook(&self, book: &OrderBook, trades: u64, trade_size: u64) {
         for (price, level) in book.buy_levels() {
             let attributes = [
                 KeyValue::new("instrument", self.instrument.clone()),
@@ -158,9 +160,8 @@ impl OrderbookMetrics {
             &sell_attributes,
         );
 
-        self.trades.add(
-            trades,
-            &[KeyValue::new("instrument", self.instrument.clone())],
-        );
+        let attributes = &[KeyValue::new("instrument", self.instrument.clone())];
+        self.trades.add(trades, attributes);
+        self.trade_size.add(trade_size, attributes);
     }
 }
