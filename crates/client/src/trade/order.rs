@@ -1,4 +1,4 @@
-use crate::trade::Instrument;
+use crate::trade::{Instrument, Price, Quantity};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 use uuid::Uuid;
@@ -8,16 +8,16 @@ pub struct Order {
     pub client_id: Uuid,
     pub order_id: Uuid,
     pub instrument: Instrument,
-    pub price: f64,
-    pub size: u64,
+    pub price: Price,
+    pub size: Quantity,
     pub side: OrderType,
 }
 
 impl Order {
     pub fn new(
         instrument: Instrument,
-        price: f64,
-        size: u64,
+        price: Price,
+        size: Quantity,
         side: OrderType,
         client_id: Uuid,
         order_id: Uuid,

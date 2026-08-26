@@ -6,7 +6,7 @@ use uuid::Uuid;
 #[derive(Deserialize)]
 pub struct RawOrder {
     pub instrument: Instrument,
-    pub price: f64,
+    pub price: NonZeroU64,
     pub size: NonZeroU64,
     pub side: OrderType,
     pub client_id: Uuid,

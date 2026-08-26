@@ -1,7 +1,7 @@
 use crate::{
     api::{Response, order::RawOrder},
     metrics::OrderbookMetrics,
-    trade::{Instrument, LimitOrder, Price, Request},
+    trade::{Instrument, LimitOrder, ORDER_SIZE_ATOM_STEP, Price, Quantity, Request},
 };
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
@@ -116,14 +116,17 @@ impl Connection {
                                 }
                             };
 
+                            if raw_order.size.get() % ORDER_SIZE_ATOM_STEP != 0 {
+                                warn!(
+                                    instrument = %self.instrument,
+                                    size = raw_order.size.get(),
+                                    "Order size must use at most six decimal places"
+                                );
+                                continue;
+                            }
+
                             let instrument = raw_order.instrument;
-                            let price = match Price::try_from(raw_order.price) {
-                                Ok(price) => price,
-                                Err(error) => {
-                                    warn!(instrument = %self.instrument, %error, "Received invalid order price");
-                                    continue;
-                                }
-                            };
+                            let price = Price::from(raw_order.price.get());
 
                             // TODO: should move into a login/register message sequence
                             match client_id {
@@ -151,7 +154,12 @@ impl Connection {
                                 }
                             }
 
-                            let order = LimitOrder::new(raw_order.size, raw_order.side, raw_order.client_id, raw_order.order_id);
+                            let order = LimitOrder::new(
+                                Quantity::from(raw_order.size.get()),
+                                raw_order.side,
+                                raw_order.client_id,
+                                raw_order.order_id,
+                            );
                             let request = Request::new(instrument, price, order);
                             let request_client_id = request.order.client_id;
 

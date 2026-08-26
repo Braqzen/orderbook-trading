@@ -74,20 +74,25 @@ impl Engine {
 
                     let result = self.book.trade(price, order.clone());
                     let trade_count = (result.trades.len() / 2) as u64;
-                    let trade_size =
-                        result.trades.iter().map(|(_, trade)| trade.size).sum::<u64>() / 2;
-                    self.metrics
-                        .record_orderbook(&self.book, trade_count, trade_size);
+                    if let Err(error) =
+                        self.metrics
+                            .record_orderbook(&self.book, trade_count, result.filled)
+                    {
+                        warn!(
+                            instrument = %self.instrument,
+                            order = %order.order_id,
+                            %error,
+                            "Failed to record orderbook metrics"
+                        );
+                    }
 
                     let remaining = result.remaining;
-                    let filled_size = order.size - remaining;
-
                     info!(
                         instrument = %self.instrument,
                         limit_price = %price,
-                        requested_size = order.size,
-                        filled_size,
-                        remaining,
+                        requested_size = %order.size,
+                        filled_size = %result.filled,
+                        remaining = %remaining,
                         trade_count = result.trades.len() / 2,
                         side = %order.side,
                         status = %result.status(),

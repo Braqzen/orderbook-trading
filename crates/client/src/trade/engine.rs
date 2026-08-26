@@ -1,7 +1,7 @@
 use crate::{
-    api::{MarketPrice, Response},
+    api::{MarketPrice, Rejection, Response, Trade},
     metrics::ClientMetrics,
-    trade::{Asset, Instrument, Inventory, Order, OrderType, Quantity},
+    trade::{Asset, Instrument, Inventory, Order, OrderType, Price, Quantity, TradeAction, Trader},
 };
 use eyre::Result;
 use std::collections::HashMap;
@@ -16,6 +16,7 @@ use uuid::Uuid;
 pub struct Engine {
     id: Uuid,
     inventory: Inventory,
+    trader: Trader,
     open_orders: HashMap<Uuid, Order>,
     price_receiver_channel: Receiver<MarketPrice>,
     order_sender_channel: Sender<Order>,
@@ -27,6 +28,7 @@ impl Engine {
     pub fn new(
         id: Uuid,
         inventory: Inventory,
+        trader: Trader,
         price_receiver_channel: Receiver<MarketPrice>,
         order_sender_channel: Sender<Order>,
         response_receiver_channel: Receiver<Response>,
@@ -35,6 +37,7 @@ impl Engine {
         Self {
             id,
             inventory,
+            trader,
             open_orders: HashMap::new(),
             price_receiver_channel,
             order_sender_channel,
@@ -61,180 +64,202 @@ impl Engine {
                     };
 
                     match response {
-                        Response::Trade(trade) => {
-                            info!(
-                                client = %self.id,
-                                order = %trade.order_id,
-                                side = %trade.side,
-                                price = trade.price,
-                                size = trade.size,
-                                remaining = trade.remaining,
-                                "Trade executed"
-                            );
-
-                            let Some(order) = self.open_orders.get(&trade.order_id).cloned() else {
-                                warn!(client = %self.id, order = %trade.order_id, "Received fill for unknown order");
-                                continue;
-                            };
-
-                            let fill_price = trade.price as f64 / 100.0;
-                            let fill_size = match Quantity::try_from(trade.size as f64) {
-                                Ok(fill_size) => fill_size,
-                                Err(error) => {
-                                    warn!(client = %self.id, %error, order = %trade.order_id, "Invalid fill size");
-                                    continue;
-                                }
-                            };
-
-                            let result = match order.side {
-                                OrderType::Buy => self.inventory.apply_buy(&order, fill_size, fill_price),
-                                OrderType::Sell => self.inventory.apply_sell(&order, fill_size, fill_price),
-                            };
-
-                            match result {
-                                Ok(()) => {
-                                    self.metrics.record_trade(&order, fill_size);
-                                    self.record_asset_metrics(order.instrument.base());
-                                    self.record_asset_metrics(order.instrument.quote());
-
-                                    if trade.remaining == 0 {
-                                        self.open_orders.remove(&trade.order_id);
-                                        self.record_open_orders_metrics(&order.instrument);
-                                    }
-                                }
-                                Err(error) => {
-                                    warn!(
-                                        client = %self.id,
-                                        %error,
-                                        order = %trade.order_id,
-                                        "Failed to apply fill to inventory"
-                                    );
-                                }
-                            }
-                        }
-                        Response::Rejection(rejection) => {
-                            if !self.open_orders.contains_key(&rejection.order_id) {
-                                warn!(client = %self.id, order = %rejection.order_id, "Received rejection for unknown order");
-                                continue;
-                            }
-
-                            let price = rejection.price as f64 / 100.0;
-                            let (asset, amount) = match rejection.side {
-                                OrderType::Buy => (
-                                    rejection.instrument.quote(),
-                                    price * rejection.size as f64,
-                                ),
-                                OrderType::Sell => (
-                                    rejection.instrument.base(),
-                                    rejection.size as f64,
-                                ),
-                            };
-                            let amount = match Quantity::try_from(amount) {
-                                Ok(amount) => amount,
-                                Err(error) => {
-                                    warn!(
-                                        client = %self.id,
-                                        %error,
-                                        order = %rejection.order_id,
-                                        "Invalid rejected order reserve amount"
-                                    );
-                                    continue;
-                                }
-                            };
-
-                            if let Err(error) = self.inventory.release(asset, amount) {
-                                warn!(
-                                    client = %self.id,
-                                    %error,
-                                    order = %rejection.order_id,
-                                    "Failed to release rejected order inventory"
-                                );
-                                continue;
-                            }
-
-                            self.open_orders.remove(&rejection.order_id);
-                            self.record_asset_metrics(asset);
-                            self.record_open_orders_metrics(&rejection.instrument);
-
-                            warn!(
-                                client = %self.id,
-                                order = %rejection.order_id,
-                                instrument = %rejection.instrument,
-                                ?rejection.reason,
-                                "Order rejection applied"
-                            );
-                        }
+                        Response::Trade(trade) => self.handle_trade(trade),
+                        Response::Rejection(rejection) => self.handle_rejection(rejection),
                     }
                 }
 
                 price = self.price_receiver_channel.recv() => {
-                    let Some(MarketPrice { instrument, value }) = price else {
+                    let Some(price) = price else {
                         error!(client = %self.id, "Market data provider channel closed");
                         break;
                     };
 
-                    let base = self.inventory.available(instrument.base());
-                    let quote = self.inventory.available(instrument.quote());
-
-                    // TODO: strategies will be implemented later, rn we only care the instrument exists
-                    //       this causes errors because we do not check amounts but nothing should break
-                    let (_base, _quote) = match (base, quote) {
-                        (Some(base), Some(quote)) => {
-                            (base, quote)
-                        },
-                        (_, _) => continue
-                    };
-
-                    let side = if rand::random_bool(0.5) {
-                        OrderType::Buy
-                    } else {
-                        OrderType::Sell
-                    };
-                    let size = rand::random_range(1..5);
-                    let order_id = Uuid::new_v4();
-
-                    let order = Order::new(instrument.clone(), value, size, side, self.id, order_id);
-
-                    let (asset, amount) = match side {
-                        OrderType::Buy => (instrument.quote(), value * size as f64),
-                        OrderType::Sell => (instrument.base(), size as f64),
-                    };
-
-                    let amount = match Quantity::try_from(amount) {
-                        Ok(amount) => amount,
-                        Err(error) => {
-                            warn!(client = %self.id, %error, %instrument, %side, size, value, "Invalid reserve amount");
-                            continue;
-                        }
-                    };
-
-                    if let Err(error) = self.inventory.reserve(asset, amount) {
-                        warn!(client = %self.id, %error, %instrument, %side, size, value, "Failed to reserve inventory");
-                        continue;
-                    }
-
-                    self.record_asset_metrics(asset);
-
-                    info!(%instrument, value, size, %side, client=%self.id, order=%order_id, "Created order");
-
-                    if self.order_sender_channel.send(order.clone()).await.is_err() {
-                        if let Err(error) = self.inventory.release(asset, amount) {
-                            error!(client = %self.id, %error, %instrument, %side, size, value, "Failed to release unsent order inventory");
-                        } else {
-                            self.record_asset_metrics(asset);
-                        }
-                        error!(client = %self.id, "Order channel closed");
+                    if !self.handle_price(price).await {
                         break;
                     }
-
-                    self.metrics.record_order_submitted(&order);
-                    self.open_orders.insert(order.order_id, order);
-                    self.record_open_orders_metrics(&instrument);
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn handle_trade(&mut self, trade: Trade) {
+        let fill_size = Quantity::from(trade.size);
+        let remaining = Quantity::from(trade.remaining);
+        let fill_price = match Price::try_from(trade.price) {
+            Ok(fill_price) => fill_price,
+            Err(error) => {
+                warn!(client = %self.id, %error, order = %trade.order_id, "Invalid fill price");
+                return;
+            }
+        };
+
+        info!(
+            client = %self.id,
+            order = %trade.order_id,
+            side = %trade.side,
+            price = %fill_price,
+            size = %fill_size,
+            remaining = %remaining,
+            "Trade executed"
+        );
+
+        let Some(order) = self.open_orders.get(&trade.order_id) else {
+            warn!(client = %self.id, order = %trade.order_id, "Received fill for unknown order");
+            return;
+        };
+
+        let result = match order.side {
+            OrderType::Buy => self.inventory.apply_buy(order, fill_size, fill_price),
+            OrderType::Sell => self.inventory.apply_sell(order, fill_size, fill_price),
+        };
+
+        if let Err(error) = result {
+            warn!(
+                client = %self.id,
+                %error,
+                order = %trade.order_id,
+                "Failed to apply fill to inventory"
+            );
+            return;
+        }
+
+        self.metrics.record_trade(order, fill_size);
+        self.record_asset_metrics(order.instrument.base());
+        self.record_asset_metrics(order.instrument.quote());
+
+        if trade.remaining == 0 {
+            let Some(order) = self.open_orders.remove(&trade.order_id) else {
+                warn!(client = %self.id, order = %trade.order_id, "Filled order no longer exists");
+                return;
+            };
+            self.record_open_orders_metrics(&order.instrument);
+        } else if let Some(order) = self.open_orders.get_mut(&trade.order_id) {
+            order.size = remaining;
+        }
+    }
+
+    fn handle_rejection(&mut self, rejection: Rejection) {
+        let rejection_price = match Price::try_from(rejection.price) {
+            Ok(rejection_price) => rejection_price,
+            Err(error) => {
+                warn!(client = %self.id, %error, order = %rejection.order_id, "Invalid rejection price");
+                return;
+            }
+        };
+
+        let Some(order) = self.open_orders.get(&rejection.order_id).cloned() else {
+            warn!(client = %self.id, order = %rejection.order_id, "Received rejection for unknown order");
+            return;
+        };
+
+        let (asset, amount) = match order.side {
+            OrderType::Buy => {
+                let amount = match order.size * order.price {
+                    Ok(amount) => amount,
+                    Err(error) => {
+                        warn!(
+                            client = %self.id,
+                            %error,
+                            order = %rejection.order_id,
+                            "Invalid rejected order reserve amount"
+                        );
+                        return;
+                    }
+                };
+                (order.instrument.quote(), amount)
+            }
+            OrderType::Sell => (order.instrument.base(), order.size),
+        };
+
+        if amount <= Quantity::ZERO {
+            warn!(
+                client = %self.id,
+                error = "rejected order reserve amount must be positive",
+                order = %rejection.order_id,
+                "Invalid rejected order reserve amount"
+            );
+            return;
+        }
+
+        if let Err(error) = self.inventory.release(asset, amount) {
+            warn!(
+                client = %self.id,
+                %error,
+                order = %rejection.order_id,
+                "Failed to release rejected order inventory"
+            );
+            return;
+        }
+
+        self.open_orders.remove(&rejection.order_id);
+        self.record_asset_metrics(asset);
+        self.record_open_orders_metrics(&rejection.instrument);
+
+        warn!(
+            client = %self.id,
+            order = %rejection.order_id,
+            instrument = %rejection.instrument,
+            price = %rejection_price,
+            size = %Quantity::from(rejection.size),
+            side = %rejection.side,
+            ?rejection.reason,
+            "Order rejection applied"
+        );
+    }
+
+    async fn handle_price(&mut self, price: MarketPrice) -> bool {
+        let TradeAction::Place {
+            instrument,
+            price: value,
+            size,
+            side,
+        } = self.trader.evaluate(price, &self.inventory)
+        else {
+            return true;
+        };
+
+        let order_id = Uuid::new_v4();
+        let order = Order::new(instrument.clone(), value, size, side, self.id, order_id);
+
+        let (asset, amount) = match side {
+            OrderType::Buy => {
+                let amount = match size * value {
+                    Ok(amount) => amount,
+                    Err(error) => {
+                        warn!(client = %self.id, %error, %instrument, %side, %size, price = %value, "Invalid reserve amount");
+                        return true;
+                    }
+                };
+                (instrument.quote(), amount)
+            }
+            OrderType::Sell => (instrument.base(), size),
+        };
+
+        if let Err(error) = self.inventory.reserve(asset, amount) {
+            warn!(client = %self.id, %error, %instrument, %side, %size, price = %value, "Failed to reserve inventory");
+            return true;
+        }
+
+        self.record_asset_metrics(asset);
+        info!(%instrument, price = %value, %size, %side, client=%self.id, order=%order_id, "Created order");
+
+        if self.order_sender_channel.send(order.clone()).await.is_err() {
+            if let Err(error) = self.inventory.release(asset, amount) {
+                error!(client = %self.id, %error, %instrument, %side, %size, price = %value, "Failed to release unsent order inventory");
+            } else {
+                self.record_asset_metrics(asset);
+            }
+            error!(client = %self.id, "Order channel closed");
+            return false;
+        }
+
+        self.metrics.record_order_submitted(&order);
+        self.open_orders.insert(order.order_id, order);
+        self.record_open_orders_metrics(&instrument);
+        true
     }
 
     fn record_asset_metrics(&self, asset: &Asset) {

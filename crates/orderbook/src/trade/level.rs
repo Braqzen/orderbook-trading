@@ -1,4 +1,4 @@
-use crate::trade::order::LimitOrder;
+use crate::trade::{LimitOrder, Quantity};
 use std::collections::VecDeque;
 
 pub struct PriceLevel {
@@ -30,5 +30,15 @@ impl PriceLevel {
 
     pub fn orders(&self) -> impl Iterator<Item = &LimitOrder> {
         self.orders.iter()
+    }
+
+    pub fn quantity(&self) -> Result<Quantity, String> {
+        let mut quantity = Quantity::ZERO;
+
+        for order in &self.orders {
+            quantity = quantity.checked_add(order.size)?;
+        }
+
+        Ok(quantity)
     }
 }

@@ -1,4 +1,4 @@
-use crate::trade::{OrderType, Price};
+use crate::trade::{OrderType, Price, Quantity};
 use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 use uuid::Uuid;
@@ -8,12 +8,18 @@ pub struct Trade {
     pub order_id: Uuid,
     pub side: OrderType,
     pub price: Price,
-    pub size: u64,
-    pub remaining: u64,
+    pub size: Quantity,
+    pub remaining: Quantity,
 }
 
 impl Trade {
-    pub fn new(order_id: Uuid, side: OrderType, price: Price, size: u64, remaining: u64) -> Self {
+    pub fn new(
+        order_id: Uuid,
+        side: OrderType,
+        price: Price,
+        size: Quantity,
+        remaining: Quantity,
+    ) -> Self {
         Self {
             order_id,
             side,
@@ -42,18 +48,23 @@ impl Display for TradeStatus {
 
 pub struct TradeResult {
     pub trades: Vec<(Uuid, Trade)>,
-    pub remaining: u64,
+    pub filled: Quantity,
+    pub remaining: Quantity,
 }
 
 impl TradeResult {
-    pub fn new(trades: Vec<(Uuid, Trade)>, remaining: u64) -> Self {
-        Self { trades, remaining }
+    pub fn new(trades: Vec<(Uuid, Trade)>, filled: Quantity, remaining: Quantity) -> Self {
+        Self {
+            trades,
+            filled,
+            remaining,
+        }
     }
 
     pub fn status(&self) -> TradeStatus {
         if self.trades.is_empty() {
             TradeStatus::Unfilled
-        } else if 0 < self.remaining {
+        } else if Quantity::ZERO < self.remaining {
             TradeStatus::Partial
         } else {
             TradeStatus::Filled

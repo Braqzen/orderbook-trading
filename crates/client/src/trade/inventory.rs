@@ -1,4 +1,4 @@
-use crate::trade::{Asset, Order, Quantity};
+use crate::trade::{Asset, Order, Price, Quantity};
 use std::collections::HashMap;
 
 pub struct Inventory {
@@ -36,24 +36,25 @@ impl Inventory {
             return Err("reserve amount must be a positive finite value".to_owned());
         }
 
-        let available = match self.available.get_mut(asset) {
+        let available = match self.available.get(asset).copied() {
             Some(available) => available,
             None => return Err("asset not in inventory".to_owned()),
         };
 
-        if *available < amount {
+        if available < amount {
             return Err("insufficient available inventory".to_owned());
         }
 
-        *available -= amount;
+        let available = available.checked_sub(amount)?;
+        let reserved = self
+            .reserved
+            .get(asset)
+            .copied()
+            .unwrap_or(Quantity::ZERO)
+            .checked_add(amount)?;
 
-        match self.reserved.get_mut(asset) {
-            Some(reserved) => *reserved += amount,
-            None => {
-                self.reserved.insert(asset.clone(), amount);
-            }
-        }
-
+        self.available.insert(asset.clone(), available);
+        self.reserved.insert(asset.clone(), reserved);
         Ok(())
     }
 
@@ -75,16 +76,14 @@ impl Inventory {
             return Err("asset not in available inventory".to_owned());
         }
 
-        match self.reserved.get_mut(asset) {
-            Some(reserved) => *reserved -= amount,
-            None => return Err("asset not in reserved inventory".to_owned()),
-        }
-
-        match self.available.get_mut(asset) {
-            Some(available) => *available += amount,
+        let available = match self.available.get(asset).copied() {
+            Some(available) => available.checked_add(amount)?,
             None => return Err("asset not in available inventory".to_owned()),
-        }
+        };
+        let reserved = reserved.checked_sub(amount)?;
 
+        self.reserved.insert(asset.clone(), reserved);
+        self.available.insert(asset.clone(), available);
         Ok(())
     }
 
@@ -92,7 +91,7 @@ impl Inventory {
         &mut self,
         order: &Order,
         fill_size: Quantity,
-        fill_price: f64,
+        fill_price: Price,
     ) -> Result<(), String> {
         let base = order.instrument.base();
         let quote = order.instrument.quote();
@@ -102,18 +101,10 @@ impl Inventory {
             return Err("fill size must be a positive finite value".to_owned());
         }
 
-        if !fill_price.is_finite() || fill_price <= 0.0 {
-            return Err("fill price must be a positive finite value".to_owned());
-        }
-
-        if !limit_price.is_finite() || limit_price <= 0.0 {
-            return Err("limit price must be a positive finite value".to_owned());
-        }
-
         // Check how much was reserved when the order was placed
-        let quote_reserved = fill_size.mul_price(limit_price)?;
+        let quote_reserved = (fill_size * limit_price)?;
         // And how much was actually fulfilled
-        let quote_paid = fill_size.mul_price(fill_price)?;
+        let quote_paid = (fill_size * fill_price)?;
 
         let reserved_quote = match self.reserved.get(quote).copied() {
             Some(reserved_quote) => reserved_quote,
@@ -128,26 +119,24 @@ impl Inventory {
             return Err("fill exceeds reserved inventory".to_owned());
         }
 
-        match self.reserved.get_mut(quote) {
-            Some(reserved) => *reserved -= quote_reserved,
-            None => return Err("asset not in reserved inventory".to_owned()),
-        }
+        let released_quote = quote_reserved.checked_sub(quote_paid)?;
+        let reserved_quote = reserved_quote.checked_sub(quote_reserved)?;
+        let available_quote = self
+            .available
+            .get(quote)
+            .copied()
+            .unwrap_or(Quantity::ZERO)
+            .checked_add(released_quote)?;
+        let available_base = self
+            .available
+            .get(base)
+            .copied()
+            .unwrap_or(Quantity::ZERO)
+            .checked_add(fill_size)?;
 
-        match self.available.get_mut(quote) {
-            Some(available) => *available += quote_reserved - quote_paid,
-            None => {
-                self.available
-                    .insert(quote.clone(), quote_reserved - quote_paid);
-            }
-        }
-
-        match self.available.get_mut(base) {
-            Some(available) => *available += fill_size,
-            None => {
-                self.available.insert(base.clone(), fill_size);
-            }
-        }
-
+        self.reserved.insert(quote.clone(), reserved_quote);
+        self.available.insert(quote.clone(), available_quote);
+        self.available.insert(base.clone(), available_base);
         Ok(())
     }
 
@@ -155,7 +144,7 @@ impl Inventory {
         &mut self,
         order: &Order,
         fill_size: Quantity,
-        fill_price: f64,
+        fill_price: Price,
     ) -> Result<(), String> {
         let base = order.instrument.base();
         let quote = order.instrument.quote();
@@ -164,11 +153,7 @@ impl Inventory {
             return Err("fill size must be a positive finite value".to_owned());
         }
 
-        if !fill_price.is_finite() || fill_price <= 0.0 {
-            return Err("fill price must be a positive finite value".to_owned());
-        }
-
-        let quote_received = fill_size.mul_price(fill_price)?;
+        let quote_received = (fill_size * fill_price)?;
 
         let reserved_base = match self.reserved.get(base).copied() {
             Some(reserved_base) => reserved_base,
@@ -179,18 +164,16 @@ impl Inventory {
             return Err("insufficient reserved inventory".to_owned());
         }
 
-        match self.reserved.get_mut(base) {
-            Some(reserved) => *reserved -= fill_size,
-            None => return Err("asset not in reserved inventory".to_owned()),
-        }
+        let reserved_base = reserved_base.checked_sub(fill_size)?;
+        let available_quote = self
+            .available
+            .get(quote)
+            .copied()
+            .unwrap_or(Quantity::ZERO)
+            .checked_add(quote_received)?;
 
-        match self.available.get_mut(quote) {
-            Some(available) => *available += quote_received,
-            None => {
-                self.available.insert(quote.clone(), quote_received);
-            }
-        }
-
+        self.reserved.insert(base.clone(), reserved_base);
+        self.available.insert(quote.clone(), available_quote);
         Ok(())
     }
 }

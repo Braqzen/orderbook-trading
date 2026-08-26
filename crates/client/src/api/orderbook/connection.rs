@@ -1,5 +1,8 @@
-use super::response::Response;
-use crate::{config::WsUrl, trade::Instrument, trade::Order};
+use crate::{
+    api::Response,
+    config::WsUrl,
+    trade::{Instrument, Order},
+};
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
@@ -111,8 +114,8 @@ impl Connection {
                             info!(
                                 client = %self.client_id,
                                 instrument = %self.instrument,
-                                price = order.price,
-                                size = order.size,
+                                price = %order.price,
+                                size = %order.size,
                                 side = %order.side,
                                 "Order sent to orderbook"
                             );

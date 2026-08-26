@@ -1,5 +1,8 @@
-use super::{connection::Connection, response::Response};
-use crate::{config::WsUrl, trade::Instrument, trade::Order};
+use crate::{
+    api::{Response, orderbook::connection::Connection},
+    config::WsUrl,
+    trade::{Instrument, Order},
+};
 use eyre::{Result, ensure, eyre};
 use std::collections::HashMap;
 use tokio::{

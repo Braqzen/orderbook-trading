@@ -1,22 +1,20 @@
+use crate::trade::Quantity;
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt::{self, Display, Formatter},
-    num::NonZeroU64,
-};
+use std::fmt::{self, Display, Formatter};
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct LimitOrder {
-    pub size: u64,
+    pub size: Quantity,
     pub side: OrderType,
     pub client_id: Uuid,
     pub order_id: Uuid,
 }
 
 impl LimitOrder {
-    pub fn new(size: NonZeroU64, side: OrderType, client_id: Uuid, order_id: Uuid) -> Self {
+    pub fn new(size: Quantity, side: OrderType, client_id: Uuid, order_id: Uuid) -> Self {
         Self {
-            size: size.get(),
+            size,
             side,
             client_id,
             order_id,
@@ -24,7 +22,7 @@ impl LimitOrder {
     }
 
     pub fn filled(&self) -> bool {
-        self.size == 0
+        self.size == Quantity::ZERO
     }
 }
 

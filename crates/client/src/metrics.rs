@@ -35,7 +35,7 @@ impl ClientMetrics {
 
     pub fn record_available(&self, asset: &Asset, quantity: Quantity) {
         self.available.record(
-            quantity.value(),
+            quantity.as_units(),
             &[
                 KeyValue::new("client", self.client_id.clone()),
                 KeyValue::new("asset", asset.as_str().to_owned()),
@@ -45,7 +45,7 @@ impl ClientMetrics {
 
     pub fn record_reserved(&self, asset: &Asset, quantity: Quantity) {
         self.reserved.record(
-            quantity.value(),
+            quantity.as_units(),
             &[
                 KeyValue::new("client", self.client_id.clone()),
                 KeyValue::new("asset", asset.as_str().to_owned()),
@@ -92,6 +92,6 @@ impl ClientMetrics {
         ];
 
         self.trades.add(1, &attributes);
-        self.trade_quantity.add(quantity.value(), &attributes);
+        self.trade_quantity.add(quantity.as_units(), &attributes);
     }
 }

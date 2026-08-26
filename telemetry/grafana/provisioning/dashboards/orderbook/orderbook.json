@@ -78,7 +78,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orderbook_level_orders{side=\"Buy\"}) ",
+          "expr": "sum(orderbook_level_orders{instrument=\"$orderbook\", side=\"Buy\"}) ",
           "legendFormat": "Total Orders",
           "range": true,
           "refId": "A"
@@ -89,7 +89,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "count(orderbook_level_orders{side=\"Buy\"} > 0)",
+          "expr": "count(orderbook_level_orders{instrument=\"$orderbook\", side=\"Buy\"} > 0)",
           "hide": false,
           "instant": false,
           "legendFormat": "Price Levels",
@@ -102,7 +102,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orderbook_level_quantity{side=\"Buy\"}) ",
+          "expr": "sum(orderbook_level_quantity{instrument=\"$orderbook\", side=\"Buy\"}) ",
           "hide": false,
           "instant": false,
           "legendFormat": "Size",
@@ -170,7 +170,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orderbook_level_orders{side=\"Sell\"}) ",
+          "expr": "sum(orderbook_level_orders{instrument=\"$orderbook\", side=\"Sell\"}) ",
           "legendFormat": "Total Orders",
           "range": true,
           "refId": "A"
@@ -181,7 +181,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "count(orderbook_level_orders{side=\"Sell\"} > 0)",
+          "expr": "count(orderbook_level_orders{instrument=\"$orderbook\", side=\"Sell\"} > 0)",
           "hide": false,
           "instant": false,
           "legendFormat": "Price Levels",
@@ -194,7 +194,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(orderbook_level_quantity{side=\"Sell\"}) ",
+          "expr": "sum(orderbook_level_quantity{instrument=\"$orderbook\", side=\"Sell\"}) ",
           "hide": false,
           "instant": false,
           "legendFormat": "Size",
@@ -909,7 +909,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "count(orderbook_level_orders{side=\"Buy\"} > 0)",
+          "expr": "count(orderbook_level_orders{instrument=\"$orderbook\", side=\"Buy\"} > 0)",
           "instant": false,
           "legendFormat": "Buy",
           "range": true,
@@ -922,7 +922,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "count(orderbook_level_orders{side=\"Sell\"} > 0)",
+          "expr": "count(orderbook_level_orders{instrument=\"$orderbook\", side=\"Sell\"} > 0)",
           "hide": false,
           "instant": false,
           "legendFormat": "Sell",
@@ -1025,7 +1025,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum(orderbook_level_quantity{side=\"Buy\"}) ",
+          "expr": "sum(orderbook_level_quantity{instrument=\"$orderbook\", side=\"Buy\"}) ",
           "instant": false,
           "legendFormat": "Buy",
           "range": true,
@@ -1038,7 +1038,7 @@
           },
           "editorMode": "code",
           "exemplar": false,
-          "expr": "sum(orderbook_level_quantity{side=\"Sell\"}) ",
+          "expr": "sum(orderbook_level_quantity{instrument=\"$orderbook\", side=\"Sell\"}) ",
           "hide": false,
           "instant": false,
           "legendFormat": "Sell",

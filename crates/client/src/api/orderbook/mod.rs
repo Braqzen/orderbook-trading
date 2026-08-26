@@ -3,4 +3,4 @@ mod connection;
 mod response;
 
 pub use book::OrderBook;
-pub use response::Response;
+pub use response::{Rejection, Response, Trade};
