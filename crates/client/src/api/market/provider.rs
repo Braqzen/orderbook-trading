@@ -1,7 +1,7 @@
 use crate::{
     api::market::{MarketPrice, request::ClientRequest},
     metrics::ClientMetrics,
-    trade::Instrument,
+    trade::{Instrument, Price},
 };
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
@@ -78,9 +78,16 @@ impl MarketDataProvider {
                                     continue;
                                 }
                             };
-                            let price = MarketPrice::new(instrument, price.value);
+                            let value = match Price::try_from(price.value) {
+                                Ok(value) => value,
+                                Err(error) => {
+                                    warn!(client = %self.client_id, %error, "Received invalid price");
+                                    continue;
+                                }
+                            };
+                            let price = MarketPrice::new(instrument, value);
 
-                            info!(client = %self.client_id, instrument = %price.instrument, price = price.value, "Price update");
+                            info!(client = %self.client_id, instrument = %price.instrument, price = %price.value, "Price update");
 
                             if self.price_sender_channel.send(price).await.is_err() {
                                 error!(client = %self.client_id, "Failed to send price through channel");

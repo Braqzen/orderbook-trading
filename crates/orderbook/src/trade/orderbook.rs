@@ -1,4 +1,4 @@
-use crate::trade::{LimitOrder, OrderType, Price, PriceLevel, Trade, TradeResult};
+use crate::trade::{LimitOrder, OrderType, Price, PriceLevel, Quantity, Trade, TradeResult};
 use std::collections::BTreeMap;
 
 pub struct OrderBook {
@@ -16,13 +16,13 @@ impl OrderBook {
 
     pub fn trade(&mut self, price: Price, mut new_order: LimitOrder) -> TradeResult {
         let mut trades = vec![];
-
+        let requested_size = new_order.size;
         let (opposite_side_book, same_side_book) = match new_order.side {
             OrderType::Buy => (&mut self.sell, &mut self.buy),
             OrderType::Sell => (&mut self.buy, &mut self.sell),
         };
 
-        while 0 < new_order.size {
+        while Quantity::ZERO < new_order.size {
             let best_price_level = match new_order.side {
                 OrderType::Buy => opposite_side_book.first_entry(),
                 OrderType::Sell => opposite_side_book.last_entry(),
@@ -32,7 +32,6 @@ impl OrderBook {
             };
 
             let fill_price = *best_price_level.key();
-
             let price_is_matchable = match new_order.side {
                 OrderType::Buy => fill_price <= price,
                 OrderType::Sell => price <= fill_price,
@@ -43,14 +42,13 @@ impl OrderBook {
             }
 
             let price_level = best_price_level.get_mut();
-
             let Some(existing_order) = price_level.first_order() else {
                 best_price_level.remove_entry();
                 continue;
             };
 
             let fill_size = new_order.size.min(existing_order.size);
-
+            // SAFETY: min bounds the fill by both orders.
             existing_order.size -= fill_size;
             new_order.size -= fill_size;
 
@@ -85,6 +83,9 @@ impl OrderBook {
         }
 
         let remaining = new_order.size;
+        // Calculate how much of the incoming order was filled.
+        let mut filled = requested_size;
+        filled -= remaining;
 
         if !new_order.filled() {
             same_side_book
@@ -93,7 +94,7 @@ impl OrderBook {
                 .add(new_order);
         }
 
-        TradeResult::new(trades, remaining)
+        TradeResult::new(trades, filled, remaining)
     }
 
     pub fn buy_levels(&self) -> impl DoubleEndedIterator<Item = (&Price, &PriceLevel)> {

@@ -3,7 +3,7 @@ use crate::{
     config::Config,
     metrics::ClientMetrics,
     randomiser::Randomiser,
-    trade::Engine,
+    trade::{Engine, Trader},
 };
 use eyre::Result;
 use tokio::{
@@ -26,6 +26,7 @@ pub struct Worker {
 impl Worker {
     pub fn new(client_id: Uuid, market_data_provider_url: String, config: Config) -> Result<Self> {
         let instrument_urls = config.instruments.clone();
+        let trader = Trader::new(config.trade_limits.clone());
         let randomiser = Randomiser::new(config)?;
         let instruments = randomiser.instruments();
         let inventory = randomiser.inventory(&instruments)?;
@@ -52,6 +53,7 @@ impl Worker {
         let engine = Engine::new(
             client_id,
             inventory,
+            trader,
             price_receiver_channel,
             order_sender_channel,
             response_receiver_channel,

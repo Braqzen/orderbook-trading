@@ -1,18 +1,46 @@
+use crate::trade::{CENTS_PER_UNIT, Price};
+use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
-use std::ops::{Add, AddAssign, Sub, SubAssign};
+use std::ops::Mul;
 
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
-pub struct Quantity(f64);
+// Fixed-point scale: 1 unit = 10^8 atoms (8 decimal places).
+const ATOMS_PER_UNIT: u64 = 100_000_000;
+/// Order sizes use six decimal places so cent-priced trades produce whole quote atoms.
+pub const ORDER_SIZE_ATOM_STEP: u64 = 100;
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct Quantity(u64);
 
 impl Quantity {
-    pub const ZERO: Self = Self(0.0);
+    pub const ZERO: Self = Self(0);
 
-    pub fn value(self) -> f64 {
+    pub fn atoms(self) -> u64 {
         self.0
     }
 
-    pub fn mul_price(self, price: f64) -> Result<Self, String> {
-        Self::try_from(self.0 * price)
+    pub fn as_units(self) -> f64 {
+        self.0 as f64 / ATOMS_PER_UNIT as f64
+    }
+
+    pub fn checked_add(self, rhs: Self) -> Result<Self, String> {
+        self.0
+            .checked_add(rhs.0)
+            .map(Self)
+            .ok_or_else(|| "quantity overflow".to_owned())
+    }
+
+    pub fn checked_sub(self, rhs: Self) -> Result<Self, String> {
+        self.0
+            .checked_sub(rhs.0)
+            .map(Self)
+            .ok_or_else(|| "quantity underflow".to_owned())
+    }
+}
+
+impl From<u64> for Quantity {
+    fn from(atoms: u64) -> Self {
+        Self(atoms)
     }
 }
 
@@ -24,40 +52,32 @@ impl TryFrom<f64> for Quantity {
             return Err("quantity must be a non-negative finite value".to_owned());
         }
 
-        Ok(Self(value))
+        let scaled = value * ATOMS_PER_UNIT as f64;
+        if scaled > u64::MAX as f64 {
+            return Err("quantity exceeds supported range".to_owned());
+        }
+
+        Ok(Self(scaled.round() as u64))
     }
 }
 
-impl Add for Quantity {
-    type Output = Self;
+impl Mul<Price> for Quantity {
+    type Output = Result<Self, String>;
 
-    fn add(self, rhs: Self) -> Self {
-        Self(self.0 + rhs.0)
-    }
-}
+    fn mul(self, price: Price) -> Self::Output {
+        if self.0 % CENTS_PER_UNIT != 0 {
+            return Err("quantity cannot be priced exactly".to_owned());
+        }
 
-impl AddAssign for Quantity {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0;
-    }
-}
-
-impl Sub for Quantity {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self {
-        Self(self.0 - rhs.0)
-    }
-}
-
-impl SubAssign for Quantity {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 -= rhs.0;
+        (self.0 / CENTS_PER_UNIT)
+            .checked_mul(price.cents())
+            .map(Self)
+            .ok_or_else(|| "quantity multiplication overflow".to_owned())
     }
 }
 
 impl Display for Quantity {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}", self.0)
+        write!(formatter, "{}", self.as_units())
     }
 }

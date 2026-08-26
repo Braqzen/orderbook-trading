@@ -37,5 +37,27 @@
       "upper_limit": 10000,
       "lower_limit": 100
     }
-  ]
+  ],
+  "trade_limit": {
+    "ETH": {
+      "maximum_size": 0.5,
+      "minimum_size": 0.05
+    },
+    "BTC": {
+      "maximum_size": 0.02,
+      "minimum_size": 0.002
+    },
+    "SOL": {
+      "maximum_size": 5,
+      "minimum_size": 1
+    },
+    "XMR": {
+      "maximum_size": 10,
+      "minimum_size": 1
+    },
+    "XRP": {
+      "maximum_size": 500,
+      "minimum_size": 10
+    }
+  }
 }

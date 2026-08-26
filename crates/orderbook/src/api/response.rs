@@ -1,4 +1,4 @@
-use crate::trade::{Instrument, LimitOrder, OrderType, Price, RejectionReason, Trade};
+use crate::trade::{Instrument, LimitOrder, OrderType, Price, Quantity, RejectionReason, Trade};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -14,7 +14,7 @@ pub struct Rejection {
     pub order_id: Uuid,
     pub instrument: Instrument,
     pub price: Price,
-    pub size: u64,
+    pub size: Quantity,
     pub side: OrderType,
     pub reason: RejectionReason,
 }
