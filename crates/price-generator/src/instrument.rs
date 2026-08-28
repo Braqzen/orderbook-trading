@@ -1,7 +1,10 @@
-use eyre::{Result, ensure, eyre};
+use eyre::{Result, eyre};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 
+/// Represents a trading pair e.g. TSLA-USD, BTC-USD...
+///
+/// Split by the hyphen into 2 assets, the base and then the pair
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Instrument {
     base: Asset,
@@ -12,14 +15,14 @@ impl TryFrom<&str> for Instrument {
     type Error = eyre::Report;
 
     fn try_from(value: &str) -> Result<Self> {
-        let (base, quote) = value
-            .split_once('-')
+        // Uninterested in proper validation. Assume correct input
+        let mut parts = value.split('-');
+        let base = parts
+            .next()
             .ok_or_else(|| eyre!("Invalid instrument: {value}"))?;
-
-        ensure!(
-            !base.is_empty() && !quote.is_empty() && !quote.contains('-'),
-            "Invalid instrument: {value}"
-        );
+        let quote = parts
+            .next()
+            .ok_or_else(|| eyre!("Invalid instrument: {value}"))?;
 
         Ok(Self {
             base: Asset(base.to_owned()),
@@ -34,5 +37,6 @@ impl Display for Instrument {
     }
 }
 
+/// Wrapper type to enrich meaning beyond a simple String
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Asset(String);
