@@ -15,6 +15,8 @@ pub struct ClientMetrics {
     orders_submitted: Counter<u64>,
     trades: Counter<u64>,
     trade_quantity: Counter<f64>,
+    trader_actions: Counter<u64>,
+    orderbook_responses: Counter<u64>,
 }
 
 impl ClientMetrics {
@@ -30,6 +32,10 @@ impl ClientMetrics {
             orders_submitted: meter.u64_counter("client.orders.submitted_total").build(),
             trades: meter.u64_counter("client.trades_total").build(),
             trade_quantity: meter.f64_counter("client.trade.quantity_total").build(),
+            trader_actions: meter.u64_counter("client.trader.actions_total").build(),
+            orderbook_responses: meter
+                .u64_counter("client.orderbook.responses_total")
+                .build(),
         }
     }
 
@@ -93,5 +99,25 @@ impl ClientMetrics {
 
         self.trades.add(1, &attributes);
         self.trade_quantity.add(quantity.as_units(), &attributes);
+    }
+
+    pub fn record_trader_action(&self, action: &str) {
+        self.trader_actions.add(
+            1,
+            &[
+                KeyValue::new("client", self.client_id.clone()),
+                KeyValue::new("action", action.to_owned()),
+            ],
+        );
+    }
+
+    pub fn record_orderbook_response(&self, response: &str) {
+        self.orderbook_responses.add(
+            1,
+            &[
+                KeyValue::new("client", self.client_id.clone()),
+                KeyValue::new("response", response.to_owned()),
+            ],
+        );
     }
 }

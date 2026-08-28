@@ -1,6 +1,9 @@
 mod book;
 mod connection;
-mod response;
+mod message;
 
 pub use book::OrderBook;
-pub use response::{Rejection, Response, Trade};
+pub use message::{
+    CancelRejection, Cancelled, OrderAccepted, OrderRejection, Request, RequestMetadata, Response,
+    Trade,
+};

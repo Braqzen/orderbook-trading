@@ -1,5 +1,6 @@
 use crate::trade::{LimitOrder, Quantity};
 use std::collections::VecDeque;
+use uuid::Uuid;
 
 pub struct PriceLevel {
     orders: VecDeque<LimitOrder>,
@@ -22,6 +23,15 @@ impl PriceLevel {
 
     pub fn remove_first_order(&mut self) -> Option<LimitOrder> {
         self.orders.pop_front()
+    }
+
+    pub fn remove_by_order_id(&mut self, client_id: Uuid, order_id: Uuid) -> Option<LimitOrder> {
+        let position = self
+            .orders
+            .iter()
+            .position(|order| order.client_id == client_id && order.order_id == order_id)?;
+
+        self.orders.remove(position)
     }
 
     pub fn is_empty(&self) -> bool {

@@ -19,6 +19,10 @@ impl Quantity {
         self.0
     }
 
+    pub fn to_decimals(self) -> u64 {
+        self.0 / ORDER_SIZE_ATOM_STEP
+    }
+
     pub fn as_units(self) -> f64 {
         self.0 as f64 / ATOMS_PER_UNIT as f64
     }
@@ -39,8 +43,8 @@ impl Quantity {
 }
 
 impl From<u64> for Quantity {
-    fn from(atoms: u64) -> Self {
-        Self(atoms)
+    fn from(value: u64) -> Self {
+        Self(value)
     }
 }
 
