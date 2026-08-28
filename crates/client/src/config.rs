@@ -122,6 +122,7 @@ fn parse_trade_limits(raw: HashMap<String, RawTradeLimit>) -> Result<HashMap<Ass
             limit.minimum_size,
             limit.maximum_size
         );
+        // TODO: fix this const being used outside file
         ensure!(
             minimum_size.atoms() % ORDER_SIZE_ATOM_STEP == 0
                 && maximum_size.atoms() % ORDER_SIZE_ATOM_STEP == 0,

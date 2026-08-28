@@ -1,5 +1,6 @@
 use crate::trade::{LimitOrder, OrderType, Price, PriceLevel, Quantity, Trade, TradeResult};
 use std::collections::BTreeMap;
+use uuid::Uuid;
 
 pub struct OrderBook {
     buy: BTreeMap<Price, PriceLevel>,
@@ -95,6 +96,33 @@ impl OrderBook {
         }
 
         TradeResult::new(trades, filled, remaining)
+    }
+
+    pub fn cancel(
+        &mut self,
+        client_id: Uuid,
+        order_id: Uuid,
+        price: Price,
+        side: OrderType,
+    ) -> bool {
+        let book = match side {
+            OrderType::Buy => &mut self.buy,
+            OrderType::Sell => &mut self.sell,
+        };
+
+        let Some(price_level) = book.get_mut(&price) else {
+            return false;
+        };
+
+        let removed = price_level
+            .remove_by_order_id(client_id, order_id)
+            .is_some();
+
+        if price_level.is_empty() {
+            book.remove(&price);
+        }
+
+        removed
     }
 
     pub fn buy_levels(&self) -> impl DoubleEndedIterator<Item = (&Price, &PriceLevel)> {

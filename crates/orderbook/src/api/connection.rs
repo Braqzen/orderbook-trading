@@ -1,5 +1,5 @@
 use crate::{
-    api::{Response, order::RawOrder},
+    api::{Response, order::RawMessage},
     metrics::OrderbookMetrics,
     trade::{Instrument, LimitOrder, ORDER_SIZE_ATOM_STEP, Price, Quantity, Request},
 };
@@ -108,61 +108,28 @@ impl Connection {
                 message = ws_stream.next() => {
                     match message {
                         Some(Ok(Message::Text(payload))) => {
-                            let raw_order = match serde_json::from_str::<RawOrder>(&payload) {
-                                Ok(order) => order,
+                            let raw_message = match serde_json::from_str::<RawMessage>(&payload) {
+                                Ok(message) => message,
                                 Err(error) => {
-                                    warn!(instrument = %self.instrument, %error, "Received invalid order");
+                                    warn!(instrument = %self.instrument, %error, "Received invalid message");
                                     continue;
                                 }
                             };
 
-                            if raw_order.size.get() % ORDER_SIZE_ATOM_STEP != 0 {
-                                warn!(
-                                    instrument = %self.instrument,
-                                    size = raw_order.size.get(),
-                                    "Order size must use at most six decimal places"
-                                );
+                            let Some(request) = parse_raw_message(
+                                &self.instrument,
+                                raw_message,
+                                &mut client_id,
+                                &self.connection_registry,
+                                outbound_sender_channel.clone(),
+                                self.token.clone(),
+                            )
+                            .await
+                            else {
                                 continue;
-                            }
+                            };
 
-                            let instrument = raw_order.instrument;
-                            let price = Price::from(raw_order.price.get());
-
-                            // TODO: should move into a login/register message sequence
-                            match client_id {
-                                Some(registered_id)
-                                    if registered_id != raw_order.client_id =>
-                                {
-                                    warn!(
-                                        instrument = %self.instrument,
-                                        registered_client = %registered_id,
-                                        submitted_client = %raw_order.client_id,
-                                        "Connection attempted to change client ID"
-                                    );
-                                    continue;
-                                }
-                                Some(_) => {}
-                                None => {
-                                    self.connection_registry.write().await.insert(
-                                        raw_order.client_id,
-                                        ClientHandle::new(
-                                            outbound_sender_channel.clone(),
-                                            self.token.clone(),
-                                        ),
-                                    );
-                                    client_id = Some(raw_order.client_id);
-                                }
-                            }
-
-                            let order = LimitOrder::new(
-                                Quantity::from(raw_order.size.get()),
-                                raw_order.side,
-                                raw_order.client_id,
-                                raw_order.order_id,
-                            );
-                            let request = Request::new(instrument, price, order);
-                            let request_client_id = request.order.client_id;
-
+                            let request_client_id = request.client_id();
                             self.metrics.client_order_enqueued(request_client_id);
                             match client_order_sender.try_send(request) {
                                 Ok(()) => {}
@@ -192,7 +159,7 @@ impl Connection {
                     let Some(request) = request else {
                         break;
                     };
-                    let request_client_id = request.order.client_id;
+                    let request_client_id = request.client_id();
                     self.metrics.client_order_dequeued(request_client_id);
                     self.metrics.global_order_enqueued();
 
@@ -271,5 +238,117 @@ impl Connection {
         }
 
         Ok(())
+    }
+}
+
+async fn parse_raw_message(
+    connection_instrument: &Instrument,
+    raw_message: RawMessage,
+    client_id: &mut Option<Uuid>,
+    connection_registry: &ConnectionRegistry,
+    outbound_sender_channel: Sender<Response>,
+    token: CancellationToken,
+) -> Option<Request> {
+    match raw_message {
+        RawMessage::Place {
+            instrument,
+            price,
+            size,
+            side,
+            client_id: submitted_client_id,
+            order_id,
+        } => {
+            if size.get() % ORDER_SIZE_ATOM_STEP != 0 {
+                warn!(
+                    instrument = %connection_instrument,
+                    size = size.get(),
+                    "Order size must use at most six decimal places"
+                );
+                return None;
+            }
+
+            if !register_client(
+                client_id,
+                submitted_client_id,
+                connection_instrument,
+                connection_registry,
+                outbound_sender_channel,
+                token,
+            )
+            .await
+            {
+                return None;
+            }
+
+            let order = LimitOrder::new(
+                Quantity::from(size.get()),
+                side,
+                submitted_client_id,
+                order_id,
+            );
+
+            Some(Request::Place {
+                instrument,
+                price: Price::from(price.get()),
+                order,
+            })
+        }
+        RawMessage::Cancel {
+            client_id: submitted_client_id,
+            order_id,
+            price,
+            side,
+        } => {
+            if !register_client(
+                client_id,
+                submitted_client_id,
+                connection_instrument,
+                connection_registry,
+                outbound_sender_channel,
+                token,
+            )
+            .await
+            {
+                return None;
+            }
+
+            Some(Request::Cancel {
+                client_id: submitted_client_id,
+                order_id,
+                price: Price::from(price.get()),
+                side,
+            })
+        }
+    }
+}
+
+async fn register_client(
+    client_id: &mut Option<Uuid>,
+    submitted_client_id: Uuid,
+    connection_instrument: &Instrument,
+    connection_registry: &ConnectionRegistry,
+    outbound_sender_channel: Sender<Response>,
+    token: CancellationToken,
+) -> bool {
+    // TODO: should move into a login/register message sequence
+    match client_id {
+        Some(registered_id) if *registered_id != submitted_client_id => {
+            warn!(
+                instrument = %connection_instrument,
+                registered_client = %registered_id,
+                submitted_client = %submitted_client_id,
+                "Connection attempted to change client ID"
+            );
+            false
+        }
+        Some(_) => true,
+        None => {
+            connection_registry.write().await.insert(
+                submitted_client_id,
+                ClientHandle::new(outbound_sender_channel, token),
+            );
+            *client_id = Some(submitted_client_id);
+            true
+        }
     }
 }

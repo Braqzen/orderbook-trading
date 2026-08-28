@@ -6,11 +6,19 @@ use uuid::Uuid;
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum Response {
     Trade(Trade),
-    Rejection(Rejection),
+    OrderAccepted(OrderAccepted),
+    OrderRejected(OrderRejection),
+    Cancelled(Cancelled),
+    CancelRejected(CancelRejection),
 }
 
 #[derive(Serialize)]
-pub struct Rejection {
+pub struct OrderAccepted {
+    pub order_id: Uuid,
+}
+
+#[derive(Serialize)]
+pub struct OrderRejection {
     pub order_id: Uuid,
     pub instrument: Instrument,
     pub price: Price,
@@ -19,7 +27,7 @@ pub struct Rejection {
     pub reason: RejectionReason,
 }
 
-impl Rejection {
+impl OrderRejection {
     pub fn new(
         instrument: Instrument,
         price: Price,
@@ -35,4 +43,21 @@ impl Rejection {
             reason,
         }
     }
+}
+
+#[derive(Serialize)]
+pub struct Cancelled {
+    pub order_id: Uuid,
+}
+
+#[derive(Serialize)]
+pub struct CancelRejection {
+    pub order_id: Uuid,
+    pub reason: CancelRejectionReason,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CancelRejectionReason {
+    OrderNotFound,
 }

@@ -1,5 +1,8 @@
 use crate::{
-    api::{MarketPrice, Rejection, Response, Trade},
+    api::{
+        CancelRejection, Cancelled, MarketPrice, OrderAccepted, OrderRejection, Request,
+        RequestMetadata, Response, Trade,
+    },
     metrics::ClientMetrics,
     trade::{Asset, Instrument, Inventory, Order, OrderType, Price, Quantity, TradeAction, Trader},
 };
@@ -19,7 +22,7 @@ pub struct Engine {
     trader: Trader,
     open_orders: HashMap<Uuid, Order>,
     price_receiver_channel: Receiver<MarketPrice>,
-    order_sender_channel: Sender<Order>,
+    order_sender_channel: Sender<RequestMetadata>,
     response_receiver_channel: Receiver<Response>,
     metrics: ClientMetrics,
 }
@@ -30,7 +33,7 @@ impl Engine {
         inventory: Inventory,
         trader: Trader,
         price_receiver_channel: Receiver<MarketPrice>,
-        order_sender_channel: Sender<Order>,
+        order_sender_channel: Sender<RequestMetadata>,
         response_receiver_channel: Receiver<Response>,
         metrics: ClientMetrics,
     ) -> Self {
@@ -63,9 +66,13 @@ impl Engine {
                         break;
                     };
 
+                    // TODO: split accepted into untraded but in book and partially unfilled rest remains in book
                     match response {
                         Response::Trade(trade) => self.handle_trade(trade),
-                        Response::Rejection(rejection) => self.handle_rejection(rejection),
+                        Response::OrderAccepted(accepted) => self.handle_order_accepted(accepted),
+                        Response::OrderRejected(rejection) => self.handle_order_rejection(rejection),
+                        Response::Cancelled(cancelled) => self.handle_cancelled(cancelled),
+                        Response::CancelRejected(rejection) => self.handle_cancel_rejection(rejection),
                     }
                 }
 
@@ -86,6 +93,8 @@ impl Engine {
     }
 
     fn handle_trade(&mut self, trade: Trade) {
+        self.metrics.record_orderbook_response("trade");
+
         let fill_size = Quantity::from(trade.size);
         let remaining = Quantity::from(trade.remaining);
         let fill_price = match Price::try_from(trade.price) {
@@ -141,7 +150,19 @@ impl Engine {
         }
     }
 
-    fn handle_rejection(&mut self, rejection: Rejection) {
+    fn handle_order_accepted(&mut self, accepted: OrderAccepted) {
+        self.metrics.record_orderbook_response("order_accepted");
+
+        info!(
+            client = %self.id,
+            order = %accepted.order_id,
+            "Order accepted"
+        );
+    }
+
+    fn handle_order_rejection(&mut self, rejection: OrderRejection) {
+        self.metrics.record_orderbook_response("order_rejected");
+
         let rejection_price = match Price::try_from(rejection.price) {
             Ok(rejection_price) => rejection_price,
             Err(error) => {
@@ -155,47 +176,13 @@ impl Engine {
             return;
         };
 
-        let (asset, amount) = match order.side {
-            OrderType::Buy => {
-                let amount = match order.size * order.price {
-                    Ok(amount) => amount,
-                    Err(error) => {
-                        warn!(
-                            client = %self.id,
-                            %error,
-                            order = %rejection.order_id,
-                            "Invalid rejected order reserve amount"
-                        );
-                        return;
-                    }
-                };
-                (order.instrument.quote(), amount)
-            }
-            OrderType::Sell => (order.instrument.base(), order.size),
-        };
-
-        if amount <= Quantity::ZERO {
-            warn!(
-                client = %self.id,
-                error = "rejected order reserve amount must be positive",
-                order = %rejection.order_id,
-                "Invalid rejected order reserve amount"
-            );
-            return;
-        }
-
-        if let Err(error) = self.inventory.release(asset, amount) {
-            warn!(
-                client = %self.id,
-                %error,
-                order = %rejection.order_id,
-                "Failed to release rejected order inventory"
-            );
+        if !self.release_order_reserve(&order) {
             return;
         }
 
         self.open_orders.remove(&rejection.order_id);
-        self.record_asset_metrics(asset);
+        self.record_asset_metrics(order.instrument.quote());
+        self.record_asset_metrics(order.instrument.base());
         self.record_open_orders_metrics(&rejection.instrument);
 
         warn!(
@@ -210,17 +197,83 @@ impl Engine {
         );
     }
 
-    async fn handle_price(&mut self, price: MarketPrice) -> bool {
-        let TradeAction::Place {
-            instrument,
-            price: value,
-            size,
-            side,
-        } = self.trader.evaluate(price, &self.inventory)
-        else {
-            return true;
+    fn handle_cancelled(&mut self, cancelled: Cancelled) {
+        self.metrics.record_orderbook_response("cancelled");
+
+        let Some(order) = self.open_orders.get(&cancelled.order_id).cloned() else {
+            warn!(client = %self.id, order = %cancelled.order_id, "Received cancel for unknown order");
+            return;
         };
 
+        if !self.release_order_reserve(&order) {
+            return;
+        }
+
+        self.open_orders.remove(&cancelled.order_id);
+        self.record_asset_metrics(order.instrument.quote());
+        self.record_asset_metrics(order.instrument.base());
+        self.record_open_orders_metrics(&order.instrument);
+
+        info!(
+            client = %self.id,
+            order = %cancelled.order_id,
+            instrument = %order.instrument,
+            price = %order.price,
+            size = %order.size,
+            side = %order.side,
+            "Order cancel applied"
+        );
+    }
+
+    fn handle_cancel_rejection(&mut self, rejection: CancelRejection) {
+        self.metrics.record_orderbook_response("cancel_rejected");
+
+        warn!(
+            client = %self.id,
+            order = %rejection.order_id,
+            ?rejection.reason,
+            "Cancel rejection received"
+        );
+    }
+
+    async fn handle_price(&mut self, price: MarketPrice) -> bool {
+        let action = self
+            .trader
+            .evaluate(price, &self.inventory, &self.open_orders);
+
+        match action {
+            TradeAction::Skip => {
+                self.metrics.record_trader_action("skip");
+            }
+            TradeAction::Place {
+                instrument,
+                price: value,
+                size,
+                side,
+            } => {
+                self.metrics.record_trader_action("place");
+                if !self.handle_place(instrument, value, size, side).await {
+                    return false;
+                }
+            }
+            TradeAction::Cancel { order_id } => {
+                self.metrics.record_trader_action("cancel");
+                if !self.handle_cancel(order_id).await {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    async fn handle_place(
+        &mut self,
+        instrument: Instrument,
+        value: Price,
+        size: Quantity,
+        side: OrderType,
+    ) -> bool {
         let order_id = Uuid::new_v4();
         let order = Order::new(instrument.clone(), value, size, side, self.id, order_id);
 
@@ -246,7 +299,12 @@ impl Engine {
         self.record_asset_metrics(asset);
         info!(%instrument, price = %value, %size, %side, client=%self.id, order=%order_id, "Created order");
 
-        if self.order_sender_channel.send(order.clone()).await.is_err() {
+        let routed = RequestMetadata {
+            instrument: instrument.clone(),
+            message: Request::place(order.clone()),
+        };
+
+        if self.order_sender_channel.send(routed).await.is_err() {
             if let Err(error) = self.inventory.release(asset, amount) {
                 error!(client = %self.id, %error, %instrument, %side, %size, price = %value, "Failed to release unsent order inventory");
             } else {
@@ -259,6 +317,78 @@ impl Engine {
         self.metrics.record_order_submitted(&order);
         self.open_orders.insert(order.order_id, order);
         self.record_open_orders_metrics(&instrument);
+        true
+    }
+
+    async fn handle_cancel(&mut self, order_id: Uuid) -> bool {
+        let Some(order) = self.open_orders.get(&order_id).cloned() else {
+            warn!(client = %self.id, order = %order_id, "Cancel requested for unknown order");
+            return true;
+        };
+
+        info!(
+            client = %self.id,
+            order = %order_id,
+            instrument = %order.instrument,
+            price = %order.price,
+            side = %order.side,
+            "Sending cancel"
+        );
+
+        let routed = RequestMetadata {
+            instrument: order.instrument.clone(),
+            message: Request::cancel(self.id, order_id, order.price, order.side),
+        };
+
+        if self.order_sender_channel.send(routed).await.is_err() {
+            error!(client = %self.id, order = %order_id, "Order channel closed");
+            return false;
+        }
+
+        true
+    }
+
+    fn release_order_reserve(&mut self, order: &Order) -> bool {
+        let (asset, amount) = match order.side {
+            OrderType::Buy => {
+                let amount = match order.size * order.price {
+                    Ok(amount) => amount,
+                    Err(error) => {
+                        warn!(
+                            client = %self.id,
+                            %error,
+                            order = %order.order_id,
+                            "Invalid order reserve amount"
+                        );
+                        return false;
+                    }
+                };
+                (order.instrument.quote(), amount)
+            }
+            OrderType::Sell => (order.instrument.base(), order.size),
+        };
+
+        if amount <= Quantity::ZERO {
+            warn!(
+                client = %self.id,
+                error = "order reserve amount must be positive",
+                order = %order.order_id,
+                "Invalid order reserve amount"
+            );
+            return false;
+        }
+
+        if let Err(error) = self.inventory.release(asset, amount) {
+            warn!(
+                client = %self.id,
+                %error,
+                order = %order.order_id,
+                "Failed to release order inventory"
+            );
+            return false;
+        }
+
+        self.record_asset_metrics(asset);
         true
     }
 

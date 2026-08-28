@@ -1,7 +1,10 @@
 use crate::{
-    api::Response,
+    api::{
+        Response,
+        orderbook::{Request, RequestMetadata},
+    },
     config::WsUrl,
-    trade::{Instrument, Order},
+    trade::Instrument,
 };
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
@@ -18,7 +21,7 @@ pub struct Connection {
     client_id: Uuid,
     instrument: Instrument,
     url: WsUrl,
-    order_receiver_channel: Receiver<Order>,
+    order_receiver_channel: Receiver<RequestMetadata>,
     response_sender_channel: Sender<Response>,
 }
 
@@ -27,7 +30,7 @@ impl Connection {
         client_id: Uuid,
         instrument: Instrument,
         url: WsUrl,
-        order_receiver_channel: Receiver<Order>,
+        order_receiver_channel: Receiver<RequestMetadata>,
         response_sender_channel: Sender<Response>,
     ) -> Self {
         Self {
@@ -95,33 +98,45 @@ impl Connection {
                     }
                 }
 
-                order = self.order_receiver_channel.recv() => {
-                    let Some(order) = order else {
+                routed = self.order_receiver_channel.recv() => {
+                    let Some(routed) = routed else {
                         error!(client = %self.client_id, instrument = %self.instrument, "Orderbook order channel closed");
                         break;
                     };
 
-                    let payload = match serde_json::to_string(&order) {
+                    let payload = match serde_json::to_string(&routed.message) {
                         Ok(payload) => payload,
                         Err(error) => {
-                            error!(client = %self.client_id, instrument = %self.instrument, %error, "Failed to serialize order");
+                            error!(client = %self.client_id, instrument = %self.instrument, %error, "Failed to serialize message");
                             continue;
                         }
                     };
 
                     match stream.send(Message::Text(payload.into())).await {
                         Ok(()) => {
-                            info!(
-                                client = %self.client_id,
-                                instrument = %self.instrument,
-                                price = %order.price,
-                                size = %order.size,
-                                side = %order.side,
-                                "Order sent to orderbook"
-                            );
+                            match &routed.message {
+                                Request::Place { price, size, side, .. } => {
+                                    info!(
+                                        client = %self.client_id,
+                                        instrument = %self.instrument,
+                                        price = %price,
+                                        size = %size,
+                                        side = %side,
+                                        "Order sent to orderbook"
+                                    );
+                                }
+                                Request::Cancel { order_id, .. } => {
+                                    info!(
+                                        client = %self.client_id,
+                                        instrument = %self.instrument,
+                                        order = %order_id,
+                                        "Cancel sent to orderbook"
+                                    );
+                                }
+                            }
                         },
                         Err(error) => {
-                            error!(client = %self.client_id, instrument = %self.instrument, %error, "Failed to send order to orderbook");
+                            error!(client = %self.client_id, instrument = %self.instrument, %error, "Failed to send message to orderbook");
                             break;
                         }
                     }

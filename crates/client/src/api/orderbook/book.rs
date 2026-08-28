@@ -1,7 +1,10 @@
 use crate::{
-    api::{Response, orderbook::connection::Connection},
+    api::{
+        Response,
+        orderbook::{RequestMetadata, connection::Connection},
+    },
     config::WsUrl,
-    trade::{Instrument, Order},
+    trade::Instrument,
 };
 use eyre::{Result, ensure, eyre};
 use std::collections::HashMap;
@@ -17,7 +20,7 @@ use uuid::Uuid;
 pub struct OrderBook {
     client_id: Uuid,
     subscriptions: Vec<(Instrument, WsUrl)>,
-    order_receiver_channel: Receiver<Order>,
+    order_receiver_channel: Receiver<RequestMetadata>,
     response_sender_channel: Sender<Response>,
 }
 
@@ -26,7 +29,7 @@ impl OrderBook {
         client_id: Uuid,
         subscriptions: Vec<Instrument>,
         instruments: HashMap<Instrument, WsUrl>,
-        order_receiver_channel: Receiver<Order>,
+        order_receiver_channel: Receiver<RequestMetadata>,
         response_sender_channel: Sender<Response>,
     ) -> Result<Self> {
         let mut resolved = Vec::with_capacity(subscriptions.len());
@@ -76,19 +79,19 @@ impl OrderBook {
 
                 _ = token.cancelled() => break,
 
-                order = self.order_receiver_channel.recv() => {
-                    let Some(order) = order else {
+                routed = self.order_receiver_channel.recv() => {
+                    let Some(routed) = routed else {
                         error!(client = %self.client_id, "Engine to orderbook api channel closed");
                         break;
                     };
 
-                    let instrument = order.instrument.clone();
+                    let instrument = routed.instrument.clone();
                     let Some(order_sender) = order_senders.get(&instrument) else {
                         warn!(client = %self.client_id, %instrument, "No orderbook connection for instrument");
                         continue;
                     };
 
-                    match order_sender.try_send(order) {
+                    match order_sender.try_send(routed) {
                         Ok(()) => {}
                         Err(TrySendError::Closed(_)) => {
                             error!(client = %self.client_id, %instrument, "Orderbook order channel closed");

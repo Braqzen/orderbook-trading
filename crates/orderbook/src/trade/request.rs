@@ -1,17 +1,25 @@
-use crate::trade::{Instrument, LimitOrder, Price};
+use crate::trade::{Instrument, LimitOrder, OrderType, Price};
+use uuid::Uuid;
 
-pub struct Request {
-    pub instrument: Instrument,
-    pub price: Price,
-    pub order: LimitOrder,
+pub enum Request {
+    Place {
+        instrument: Instrument,
+        price: Price,
+        order: LimitOrder,
+    },
+    Cancel {
+        client_id: Uuid,
+        order_id: Uuid,
+        price: Price,
+        side: OrderType,
+    },
 }
 
 impl Request {
-    pub fn new(instrument: Instrument, price: Price, order: LimitOrder) -> Self {
-        Self {
-            instrument,
-            price,
-            order,
+    pub fn client_id(&self) -> Uuid {
+        match self {
+            Self::Place { order, .. } => order.client_id,
+            Self::Cancel { client_id, .. } => *client_id,
         }
     }
 }
