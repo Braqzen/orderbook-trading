@@ -1,4 +1,5 @@
 use crate::{
+    api::WsUrl,
     api::market::{MarketPrice, request::ClientRequest},
     metrics::ClientMetrics,
     trade::{Instrument, Price},
@@ -13,17 +14,22 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 pub struct MarketDataProvider {
+    /// Used for attaching to logs
     client_id: Uuid,
-    url: String,
+    /// Connect to the market data provider to receive price updates
+    url: WsUrl,
+    /// Set of instruments to subscribe to from the randomly generated state
     instruments: Vec<Instrument>,
+    /// Channel used to send price events to the engine
     price_sender_channel: Sender<MarketPrice>,
+    /// Track metrics
     metrics: ClientMetrics,
 }
 
 impl MarketDataProvider {
     pub fn new(
         client_id: Uuid,
-        url: String,
+        url: WsUrl,
         instruments: Vec<Instrument>,
         price_sender_channel: Sender<MarketPrice>,
         metrics: ClientMetrics,
@@ -38,8 +44,10 @@ impl MarketDataProvider {
     }
 
     pub async fn run(self, token: CancellationToken) -> Result<()> {
-        let (mut stream, _response) = connect_async(self.url.clone()).await?;
+        let (mut stream, _response) = connect_async(self.url.as_str()).await?;
 
+        // TODO: ack/err handling instead of silently fail without response
+        // First msg to provider tells them which instruments client is interested in for updates
         let subscribe = ClientRequest::subscribe(
             self.instruments
                 .iter()
@@ -61,6 +69,7 @@ impl MarketDataProvider {
 
                 _ = token.cancelled() => break,
 
+                // Listen to market data provider events and forward to engine for next step
                 message = stream.next() => {
                     match message {
                         Some(Ok(Message::Text(text))) => {
@@ -85,6 +94,8 @@ impl MarketDataProvider {
                                     continue;
                                 }
                             };
+
+                            // Separate transport type from internal logical type; increase type safety
                             let price = MarketPrice::new(instrument, value);
 
                             info!(client = %self.client_id, instrument = %price.instrument, price = %price.value, "Price update");
@@ -114,6 +125,7 @@ impl MarketDataProvider {
             }
         }
 
+        // Reset values to 0 otherwise metrics retain previous value
         for instrument in &self.instruments {
             self.metrics.record_subscription(instrument, false);
         }

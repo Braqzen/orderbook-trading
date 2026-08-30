@@ -1,3 +1,5 @@
+//! Types associated with receiving a response from an orderbook
+
 use crate::trade::{Instrument, OrderType};
 use serde::Deserialize;
 use uuid::Uuid;

@@ -1,5 +1,8 @@
 use crate::{
-    config::Config, feed::Feed, price::PriceManager, proto::PriceUpdate, publisher::Publisher,
+    config::Config,
+    proto::PriceUpdate,
+    publisher::Publisher,
+    simulation::{Feed, PriceManager},
 };
 use eyre::Result;
 use rand::random_range;
@@ -21,8 +24,9 @@ const PUBLISH_INTERVAL: u64 = 10;
 const SPAWN_JITTER_MS: u64 = 5;
 
 pub struct Worker {
-    publish_interval: u64,
+    /// Market Data Provider URL to send gRPC price updates to
     market_data_provider_url: String,
+    /// Math to create a new price per config constraints
     price_managers: Vec<PriceManager>,
 }
 
@@ -40,7 +44,6 @@ impl Worker {
 
         Ok(Self {
             market_data_provider_url,
-            publish_interval: PUBLISH_INTERVAL,
             price_managers,
         })
     }
@@ -55,16 +58,19 @@ impl Worker {
         let (price_sender_channel, price_receiver_channel) = mpsc::channel::<PriceUpdate>(128);
         let mut tasks = JoinSet::new();
 
+        // Receive generated prices from each manager and send them to the market data feed
         let publisher_token = token.child_token();
         let publisher = Publisher::new(self.market_data_provider_url, price_receiver_channel);
         tasks.spawn(publisher.run(publisher_token));
 
+        // Spawn a feed per instrument with a slight delay to stagger updates
+        // Real event do not all arrive at the same time each tick
         for price_manager in self.price_managers.into_iter() {
             sleep(Duration::from_millis(random_range(0..SPAWN_JITTER_MS))).await;
 
             let feed_token = token.child_token();
             let price_sender_channel = price_sender_channel.clone();
-            let feed = Feed::new(price_manager, price_sender_channel, self.publish_interval);
+            let feed = Feed::new(price_manager, price_sender_channel, PUBLISH_INTERVAL);
             tasks.spawn(feed.run(feed_token));
         }
 

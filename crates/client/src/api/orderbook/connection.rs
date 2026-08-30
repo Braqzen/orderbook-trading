@@ -1,9 +1,9 @@
 use crate::{
+    api::WsUrl,
     api::{
         Response,
         orderbook::{Request, RequestMetadata},
     },
-    config::WsUrl,
     trade::Instrument,
 };
 use eyre::Result;
@@ -19,9 +19,13 @@ use uuid::Uuid;
 
 pub struct Connection {
     client_id: Uuid,
+    /// Used for logging and placing orders
     instrument: Instrument,
+    /// Connect to the orderbook via websocket
     url: WsUrl,
+    /// Receives orders and forwards to orderbook
     order_receiver_channel: Receiver<RequestMetadata>,
+    /// Receives orderbook responses and send back to engine
     response_sender_channel: Sender<Response>,
 }
 
@@ -58,6 +62,7 @@ impl Connection {
 
                 _ = token.cancelled() => break,
 
+                // Orderbook has responded, forward to engine
                 message = stream.next() => {
                     match message {
                         Some(Ok(Message::Text(payload))) => {
@@ -98,13 +103,14 @@ impl Connection {
                     }
                 }
 
-                routed = self.order_receiver_channel.recv() => {
-                    let Some(routed) = routed else {
+                // Received request to forward to orderbook
+                request = self.order_receiver_channel.recv() => {
+                    let Some(request) = request else {
                         error!(client = %self.client_id, instrument = %self.instrument, "Orderbook order channel closed");
                         break;
                     };
 
-                    let payload = match serde_json::to_string(&routed.message) {
+                    let payload = match serde_json::to_string(&request.message) {
                         Ok(payload) => payload,
                         Err(error) => {
                             error!(client = %self.client_id, instrument = %self.instrument, %error, "Failed to serialize message");
@@ -114,7 +120,7 @@ impl Connection {
 
                     match stream.send(Message::Text(payload.into())).await {
                         Ok(()) => {
-                            match &routed.message {
+                            match &request.message {
                                 Request::Place { price, size, side, .. } => {
                                     info!(
                                         client = %self.client_id,

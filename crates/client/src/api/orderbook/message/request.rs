@@ -1,3 +1,5 @@
+//! Types associated with sending a request to an orderbook
+
 use crate::trade::{Instrument, Order, OrderType, Price, Quantity};
 use serde::Serialize;
 use uuid::Uuid;

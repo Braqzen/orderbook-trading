@@ -48,13 +48,11 @@ impl Display for Instrument {
 pub struct Asset(String);
 
 impl Asset {
+    pub fn new(value: String) -> Self {
+        Self(value)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl From<String> for Asset {
-    fn from(value: String) -> Self {
-        Self(value)
     }
 }

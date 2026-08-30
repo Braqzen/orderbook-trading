@@ -7,15 +7,25 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct ClientMetrics {
+    /// Track metrics by different client IDs
     client_id: String,
+    /// Amount of available inventory - funds that can be spent
     available: Gauge<f64>,
+    /// Amount of locked inventory - funds moved from available to locked when placing order
     reserved: Gauge<f64>,
+    /// Number of orders sent to orderbook that are still open
     open_orders: Gauge<u64>,
+    /// Instrument subscriptions
     subscriptions: Gauge<u64>,
+    /// Number of submitted orders to orderbooks
     orders_submitted: Counter<u64>,
+    /// Number of trades the orderbook confirmed
     trades: Counter<u64>,
+    /// Size of trades
     trade_quantity: Counter<f64>,
+    /// Actions the client trader took
     trader_actions: Counter<u64>,
+    /// When orderbook sends back a response what actions were taken in book
     orderbook_responses: Counter<u64>,
 }
 

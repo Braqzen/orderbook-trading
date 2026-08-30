@@ -1,9 +1,8 @@
 use crate::{
     api::{
-        Response,
+        Response, WsUrl,
         orderbook::{RequestMetadata, connection::Connection},
     },
-    config::WsUrl,
     trade::Instrument,
 };
 use eyre::{Result, ensure, eyre};
@@ -19,8 +18,11 @@ use uuid::Uuid;
 
 pub struct OrderBook {
     client_id: Uuid,
+    /// Track which instrument is associated with an orderbook
     subscriptions: Vec<(Instrument, WsUrl)>,
+    /// Requests received from the engine to send to an orderbook
     order_receiver_channel: Receiver<RequestMetadata>,
+    /// Receive responses from an orderbook and forward to engine
     response_sender_channel: Sender<Response>,
 }
 
@@ -56,8 +58,11 @@ impl OrderBook {
 
     pub async fn run(mut self, token: CancellationToken) -> Result<()> {
         let mut order_senders = HashMap::new();
-        let mut tasks = JoinSet::new();
+        let mut connections = JoinSet::new();
 
+        // Create a connection to each orderbook and forward requests to them based on which instrument they take
+        // Connections will send requests and receive orderbook responses
+        // Responses are sent back to the engine for final accounting
         for (instrument, url) in self.subscriptions {
             let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
             order_senders.insert(instrument.clone(), order_sender_channel);
@@ -70,7 +75,7 @@ impl OrderBook {
                 self.response_sender_channel.clone(),
             );
             let connection_token = token.child_token();
-            tasks.spawn(connection.run(connection_token));
+            connections.spawn(connection.run(connection_token));
         }
 
         loop {
@@ -79,19 +84,20 @@ impl OrderBook {
 
                 _ = token.cancelled() => break,
 
-                routed = self.order_receiver_channel.recv() => {
-                    let Some(routed) = routed else {
+                // Engine sent request, forward it to the correct orderbook connection for processing
+                request = self.order_receiver_channel.recv() => {
+                    let Some(request) = request else {
                         error!(client = %self.client_id, "Engine to orderbook api channel closed");
                         break;
                     };
 
-                    let instrument = routed.instrument.clone();
+                    let instrument = request.instrument.clone();
                     let Some(order_sender) = order_senders.get(&instrument) else {
                         warn!(client = %self.client_id, %instrument, "No orderbook connection for instrument");
                         continue;
                     };
 
-                    match order_sender.try_send(routed) {
+                    match order_sender.try_send(request) {
                         Ok(()) => {}
                         Err(TrySendError::Closed(_)) => {
                             error!(client = %self.client_id, %instrument, "Orderbook order channel closed");
@@ -102,7 +108,7 @@ impl OrderBook {
                     }
                 }
 
-                result = tasks.join_next(), if !tasks.is_empty() => {
+                result = connections.join_next(), if !connections.is_empty() => {
                     match result {
                         Some(Ok(Ok(()))) => {}
                         Some(Ok(Err(error))) => {
@@ -121,7 +127,7 @@ impl OrderBook {
 
         token.cancel();
 
-        while let Some(result) = tasks.join_next().await {
+        while let Some(result) = connections.join_next().await {
             log_connection_result(self.client_id, result);
         }
 

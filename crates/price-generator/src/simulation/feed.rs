@@ -1,7 +1,7 @@
 use crate::{
     metrics::FeedMetrics,
-    price::{Price, PriceManager},
     proto::PriceUpdate,
+    simulation::{manager::PriceManager, price::Price},
 };
 use eyre::Result;
 use std::time::Duration;
@@ -10,9 +10,13 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 pub struct Feed {
+    /// Responsible for creating a new price value
     price_manager: PriceManager,
+    /// Channel used to send generated prices to the publisher
     price_sender_channel: Sender<PriceUpdate>,
+    /// Value to sleep between generations to provide a consistent rhythm
     publish_interval: u64,
+    /// Tracks metrics regarding price generation
     metrics: FeedMetrics,
 }
 
@@ -50,14 +54,17 @@ impl Feed {
                 }
                 Err(error) => {
                     error!(%error, "Failed to send price");
-                    break;
+                    return Err(error.into());
                 }
             }
 
             select! {
                 biased;
 
+                // We requested a shutdown
                 _ = token.cancelled() => break,
+
+                // Slow down price generation to an interval
                 _ = sleep(Duration::from_millis(self.publish_interval)) => {}
             }
         }
