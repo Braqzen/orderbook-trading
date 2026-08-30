@@ -10,7 +10,7 @@ impl Inventory {
     pub fn new(values: Vec<(String, Quantity)>) -> Self {
         let available = values
             .into_iter()
-            .map(|(asset, amount)| (Asset::from(asset), amount))
+            .map(|(asset, amount)| (Asset::new(asset), amount))
             .collect();
 
         Self {

@@ -40,6 +40,8 @@ impl Randomiser {
             .map(|entry| entry.symbol.as_str())
             .collect();
 
+        // Compose instrument BASE-QUOTE to ensure both are in the client inventory
+        // otherwise cannot trade
         for instrument in config.instruments.keys() {
             ensure!(
                 inventory_assets.contains(instrument.base().as_str())
@@ -48,27 +50,20 @@ impl Randomiser {
             );
         }
 
-        for entry in &config.inventory {
-            ensure!(
-                entry.lower_limit.is_finite()
-                    && entry.upper_limit.is_finite()
-                    && entry.lower_limit <= entry.upper_limit,
-                "Invalid limits for {}: lower={}, upper={}",
-                entry.symbol,
-                entry.lower_limit,
-                entry.upper_limit
-            );
-        }
-
         Ok(Self { config })
     }
 
-    pub fn inventory(&self, instruments: &[Instrument]) -> Result<Inventory> {
-        let mut selected_assets = HashSet::from([USD_SYMBOL]);
+    pub fn randomise(&self) -> Result<(Vec<Instrument>, Inventory)> {
+        let mut instruments: Vec<Instrument> = self.config.instruments.keys().cloned().collect();
+        instruments.shuffle(&mut rand::rng());
+        let instrument_count = rand::random_range(MIN_INSTRUMENTS..=self.config.instruments.len());
+        instruments.truncate(instrument_count);
 
-        for instrument in instruments {
-            selected_assets.insert(instrument.base().as_str());
-            selected_assets.insert(instrument.quote().as_str());
+        let mut selected_assets = HashSet::from([USD_SYMBOL.to_owned()]);
+
+        for instrument in instruments.iter() {
+            selected_assets.insert(instrument.base().as_str().to_owned());
+            selected_assets.insert(instrument.quote().as_str().to_owned());
         }
 
         let entries = self
@@ -76,7 +71,7 @@ impl Randomiser {
             .inventory
             .clone()
             .into_iter()
-            .filter(|entry| selected_assets.contains(entry.symbol.as_str()));
+            .filter(|entry| selected_assets.contains(&entry.symbol));
 
         let values = entries
             .map(|entry| {
@@ -88,15 +83,6 @@ impl Randomiser {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Inventory::new(values))
-    }
-
-    pub fn instruments(&self) -> Vec<Instrument> {
-        let mut instruments: Vec<Instrument> = self.config.instruments.keys().cloned().collect();
-        instruments.shuffle(&mut rand::rng());
-        let instrument_count = rand::random_range(MIN_INSTRUMENTS..=self.config.instruments.len());
-        instruments.truncate(instrument_count);
-
-        instruments
+        Ok((instruments, Inventory::new(values)))
     }
 }

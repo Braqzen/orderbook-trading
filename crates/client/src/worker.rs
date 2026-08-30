@@ -1,5 +1,5 @@
 use crate::{
-    api::{MarketDataProvider, MarketPrice, OrderBook},
+    api::{MarketDataProvider, MarketPrice, OrderBook, WsUrl},
     config::Config,
     metrics::ClientMetrics,
     randomiser::Randomiser,
@@ -18,24 +18,40 @@ use uuid::Uuid;
 
 pub struct Worker {
     client_id: Uuid,
-    market_data_provider: MarketDataProvider,
-    orderbook: OrderBook,
+    /// Orchestrates trade actions and accounting
     engine: Engine,
+    /// Takes market price events and forwards to engine for processing
+    market_data_provider: MarketDataProvider,
+    /// Takes trade actions from engine to send to book and forward responses back to engine
+    orderbook: OrderBook,
 }
 
 impl Worker {
-    pub fn new(client_id: Uuid, market_data_provider_url: String, config: Config) -> Result<Self> {
-        let instrument_urls = config.instruments.clone();
-        let trader = Trader::new(config.trade_limits.clone());
-        let randomiser = Randomiser::new(config)?;
-        let instruments = randomiser.instruments();
-        let inventory = randomiser.inventory(&instruments)?;
+    pub fn new(market_data_provider_url: WsUrl, config: Config) -> Result<Self> {
+        // Project spawns multiple clients with random state so use an ID for logs, metrics.
+        let client_id = Uuid::new_v4();
         let metrics = ClientMetrics::new(client_id);
 
+        // Associates an instrument to the orderbook to send to
+        let orderbook_urls = config.instruments.clone();
+
+        let trade_limits = config.trade_limits.clone();
+
+        // Load the same config for all clients then randomise entries for simulation
+        let randomiser = Randomiser::new(config)?;
+        let (instruments, inventory) = randomiser.randomise()?;
+
+        // Given new price events and client state decide on next trade action
+        let trader = Trader::new(trade_limits, inventory, metrics.clone());
+
+        // Used to send price updates from the market data provider to the engine for evaluation
         let (price_sender_channel, price_receiver_channel) = mpsc::channel::<MarketPrice>(128);
+        // Used to send orders from engine to orderbook api
         let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
+        // Used to forward orderbook responses back to engine
         let (response_sender_channel, response_receiver_channel) = mpsc::channel(128);
 
+        // First step of New Price Update Event -> Send to Engine for processing
         let market_data_provider = MarketDataProvider::new(
             client_id,
             market_data_provider_url,
@@ -43,22 +59,23 @@ impl Worker {
             price_sender_channel,
             metrics.clone(),
         );
-        let orderbook = OrderBook::new(
-            client_id,
-            instruments,
-            instrument_urls,
-            order_receiver_channel,
-            response_sender_channel,
-        )?;
+        // Engine decides if it wants to trade, sends actions to orderbook
         let engine = Engine::new(
             client_id,
-            inventory,
             trader,
             price_receiver_channel,
             order_sender_channel,
             response_receiver_channel,
             metrics,
         );
+        // Lastly orderbook sends actions to orderbook service then forwards responses to engine
+        let orderbook = OrderBook::new(
+            client_id,
+            instruments,
+            orderbook_urls,
+            order_receiver_channel,
+            response_sender_channel,
+        )?;
 
         Ok(Self {
             client_id,
