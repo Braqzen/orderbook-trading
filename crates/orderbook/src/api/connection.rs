@@ -130,16 +130,15 @@ impl Connection {
                             };
 
                             let request_client_id = request.client_id();
-                            self.metrics.client_order_enqueued(request_client_id);
                             match client_order_sender.try_send(request) {
-                                Ok(()) => {}
+                                Ok(()) => {
+                                    self.metrics.client_order_enqueued(request_client_id);
+                                }
                                 Err(TrySendError::Closed(_)) => {
-                                    self.metrics.client_order_dequeued(request_client_id);
                                     error!(instrument = %self.instrument, "Order channel closed");
                                     break;
                                 }
                                 Err(TrySendError::Full(_)) => {
-                                    self.metrics.client_order_dequeued(request_client_id);
                                     warn!(instrument = %self.instrument, "Client order queue full");
                                     break;
                                 }
@@ -161,17 +160,16 @@ impl Connection {
                     };
                     let request_client_id = request.client_id();
                     self.metrics.client_order_dequeued(request_client_id);
-                    self.metrics.global_order_enqueued();
 
                     match self.order_sender_channel.try_send(request) {
-                        Ok(()) => {}
+                        Ok(()) => {
+                            self.metrics.global_order_enqueued();
+                        }
                         Err(TrySendError::Closed(_)) => {
-                            self.metrics.global_order_dequeued();
                             error!(instrument = %self.instrument, "Order channel closed");
                             break;
                         }
                         Err(TrySendError::Full(_)) => {
-                            self.metrics.global_order_dequeued();
                             warn!(instrument = %self.instrument, "Global order queue full");
                             break;
                         }
