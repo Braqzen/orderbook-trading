@@ -10,6 +10,27 @@ pub enum Response {
     OrderRejected(OrderRejection),
     Cancelled(Cancelled),
     CancelRejected(CancelRejection),
+    LoginAccepted,
+    LoginRejected(LoginRejection),
+}
+
+#[derive(Serialize)]
+pub struct LoginRejection {
+    pub reason: LoginRejectionReason,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoginRejectionReason {
+    ClientAlreadyConnected,
+    ClientIdMismatch,
+    NotLoggedIn,
+}
+
+impl Response {
+    pub fn login_rejected(reason: LoginRejectionReason) -> Self {
+        Self::LoginRejected(LoginRejection { reason })
+    }
 }
 
 #[derive(Serialize)]

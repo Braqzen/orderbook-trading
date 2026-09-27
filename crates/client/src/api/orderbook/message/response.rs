@@ -14,6 +14,27 @@ pub enum Response {
     CancelRejected(CancelRejection),
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum LoginResponse {
+    LoginAccepted,
+    LoginRejected(LoginRejection),
+}
+
+#[derive(Deserialize)]
+pub struct LoginRejection {
+    pub reason: LoginRejectionReason,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoginRejectionReason {
+    ClientAlreadyConnected,
+    ClientIdMismatch,
+    NotLoggedIn,
+    AlreadyLoggedIn,
+}
+
 #[derive(Deserialize, Clone)]
 pub struct Trade {
     pub order_id: Uuid,

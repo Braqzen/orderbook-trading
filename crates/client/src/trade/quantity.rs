@@ -1,7 +1,9 @@
 use crate::trade::{CENTS_PER_UNIT, Price};
 use serde::Serialize;
-use std::fmt::{self, Display, Formatter};
-use std::ops::Mul;
+use std::{
+    fmt::{self, Display, Formatter},
+    ops::Mul,
+};
 
 // Fixed-point scale: 1 unit = 10^8 atoms (8 decimal places).
 const ATOMS_PER_UNIT: u64 = 100_000_000;

@@ -1,5 +1,5 @@
 use crate::{
-    api::{MarketDataProvider, MarketPrice, OrderBook, WsUrl},
+    api::{ActiveOrderbooks, MarketDataProvider, MarketPrice, OrderBook, WsUrl},
     config::Config,
     metrics::ClientMetrics,
     randomiser::Randomiser,
@@ -41,6 +41,10 @@ impl Worker {
         let randomiser = Randomiser::new(config)?;
         let (instruments, inventory) = randomiser.randomise()?;
 
+        // TODO: this has many bugs rn, need to improve in another issue
+        // Price updates should only reach the engine if the client logged into the orderbook
+        let active_orderbooks: ActiveOrderbooks = Default::default();
+
         // Given new price events and client state decide on next trade action
         let trader = Trader::new(trade_limits, inventory, metrics.clone());
 
@@ -57,6 +61,7 @@ impl Worker {
             market_data_provider_url,
             instruments.clone(),
             price_sender_channel,
+            active_orderbooks.clone(),
             metrics.clone(),
         );
         // Engine decides if it wants to trade, sends actions to orderbook
@@ -67,6 +72,7 @@ impl Worker {
             order_sender_channel,
             response_receiver_channel,
             metrics,
+            active_orderbooks.clone(),
         );
         // Lastly orderbook sends actions to orderbook service then forwards responses to engine
         let orderbook = OrderBook::new(
@@ -75,6 +81,7 @@ impl Worker {
             orderbook_urls,
             order_receiver_channel,
             response_sender_channel,
+            active_orderbooks,
         )?;
 
         Ok(Self {

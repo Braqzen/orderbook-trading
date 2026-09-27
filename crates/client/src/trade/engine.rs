@@ -1,5 +1,5 @@
 use crate::{
-    api::{MarketPrice, Request, RequestMetadata, Response},
+    api::{ActiveOrderbooks, MarketPrice, Request, RequestMetadata, Response},
     metrics::ClientMetrics,
     trade::{TradeAction, Trader},
 };
@@ -25,6 +25,8 @@ pub struct Engine {
     response_receiver_channel: Receiver<Response>,
     /// Tracks metrics
     metrics: ClientMetrics,
+    /// Routes orders to logged-in orderbook connections
+    active_orderbooks: ActiveOrderbooks,
 }
 
 impl Engine {
@@ -35,6 +37,7 @@ impl Engine {
         order_sender_channel: Sender<RequestMetadata>,
         response_receiver_channel: Receiver<Response>,
         metrics: ClientMetrics,
+        active_orderbooks: ActiveOrderbooks,
     ) -> Self {
         Self {
             id,
@@ -43,6 +46,7 @@ impl Engine {
             order_sender_channel,
             response_receiver_channel,
             metrics,
+            active_orderbooks,
         }
     }
 
@@ -92,6 +96,15 @@ impl Engine {
                         break;
                     };
 
+                    if !self
+                        .active_orderbooks
+                        .read()
+                        .await
+                        .contains_key(&price.instrument)
+                    {
+                        continue;
+                    }
+
                     match self.trader.process_event(price) {
                         TradeAction::Skip => {}
                         TradeAction::Place {
@@ -137,7 +150,7 @@ impl Engine {
 
                             let request = RequestMetadata {
                                 instrument: order.instrument.clone(),
-                                message: Request::cancel(self.id, order_id, order.price, order.side),
+                                message: Request::cancel(order_id, order.price, order.side),
                             };
 
                             if self.order_sender_channel.send(request).await.is_err() {

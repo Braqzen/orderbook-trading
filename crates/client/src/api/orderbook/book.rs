@@ -1,7 +1,7 @@
 use crate::{
     api::{
         Response, WsUrl,
-        orderbook::{RequestMetadata, connection::Connection},
+        orderbook::{ActiveOrderbooks, RequestMetadata, connection::Connection},
     },
     trade::Instrument,
 };
@@ -17,6 +17,7 @@ use tracing::{error, warn};
 use uuid::Uuid;
 
 pub struct OrderBook {
+    /// Random client ID
     client_id: Uuid,
     /// Track which instrument is associated with an orderbook
     subscriptions: Vec<(Instrument, WsUrl)>,
@@ -24,6 +25,8 @@ pub struct OrderBook {
     order_receiver_channel: Receiver<RequestMetadata>,
     /// Receive responses from an orderbook and forward to engine
     response_sender_channel: Sender<Response>,
+    /// Routes orders to logged-in orderbook connections
+    active_orderbooks: ActiveOrderbooks,
 }
 
 impl OrderBook {
@@ -33,6 +36,7 @@ impl OrderBook {
         instruments: HashMap<Instrument, WsUrl>,
         order_receiver_channel: Receiver<RequestMetadata>,
         response_sender_channel: Sender<Response>,
+        active_orderbooks: ActiveOrderbooks,
     ) -> Result<Self> {
         let mut resolved = Vec::with_capacity(subscriptions.len());
 
@@ -53,11 +57,11 @@ impl OrderBook {
             subscriptions: resolved,
             order_receiver_channel,
             response_sender_channel,
+            active_orderbooks,
         })
     }
 
     pub async fn run(mut self, token: CancellationToken) -> Result<()> {
-        let mut order_senders = HashMap::new();
         let mut connections = JoinSet::new();
 
         // Create a connection to each orderbook and forward requests to them based on which instrument they take
@@ -65,14 +69,15 @@ impl OrderBook {
         // Responses are sent back to the engine for final accounting
         for (instrument, url) in self.subscriptions {
             let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
-            order_senders.insert(instrument.clone(), order_sender_channel);
 
             let connection = Connection::new(
                 self.client_id,
                 instrument,
                 url,
+                order_sender_channel,
                 order_receiver_channel,
                 self.response_sender_channel.clone(),
+                self.active_orderbooks.clone(),
             );
             let connection_token = token.child_token();
             connections.spawn(connection.run(connection_token));
@@ -92,7 +97,7 @@ impl OrderBook {
                     };
 
                     let instrument = request.instrument.clone();
-                    let Some(order_sender) = order_senders.get(&instrument) else {
+                    let Some(order_sender) = self.active_orderbooks.read().await.get(&instrument).cloned() else {
                         warn!(client = %self.client_id, %instrument, "No orderbook connection for instrument");
                         continue;
                     };
@@ -100,6 +105,13 @@ impl OrderBook {
                     match order_sender.try_send(request) {
                         Ok(()) => {}
                         Err(TrySendError::Closed(_)) => {
+                            let mut routes = self.active_orderbooks.write().await;
+                            if routes
+                                .get(&instrument)
+                                .is_some_and(|registered| registered.same_channel(&order_sender))
+                            {
+                                routes.remove(&instrument);
+                            }
                             error!(client = %self.client_id, %instrument, "Orderbook order channel closed");
                         }
                         Err(TrySendError::Full(_)) => {
@@ -113,7 +125,6 @@ impl OrderBook {
                         Some(Ok(Ok(()))) => {}
                         Some(Ok(Err(error))) => {
                             error!(client = %self.client_id, %error, "Orderbook connection failed");
-                            break;
                         }
                         Some(Err(error)) => {
                             error!(client = %self.client_id, %error, "Orderbook connection task failed");

@@ -4,6 +4,19 @@ use std::num::NonZeroU64;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
+#[serde(untagged)]
+pub enum ClientMessage {
+    Login(LoginRequest),
+    Trading(RawMessage),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LoginRequest {
+    pub client_id: Uuid,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum RawMessage {
     Place {
@@ -11,11 +24,9 @@ pub enum RawMessage {
         price: NonZeroU64,
         size: NonZeroU64,
         side: OrderType,
-        client_id: Uuid,
         order_id: Uuid,
     },
     Cancel {
-        client_id: Uuid,
         order_id: Uuid,
         price: NonZeroU64,
         side: OrderType,

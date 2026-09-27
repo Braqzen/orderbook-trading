@@ -1,6 +1,8 @@
 use serde::Serialize;
-use std::fmt::{self, Display, Formatter};
-use std::ops::SubAssign;
+use std::{
+    fmt::{self, Display, Formatter},
+    ops::SubAssign,
+};
 
 const ATOMS_PER_UNIT: u64 = 100_000_000;
 pub const ORDER_SIZE_ATOM_STEP: u64 = 100;

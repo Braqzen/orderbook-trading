@@ -1,6 +1,9 @@
 use crate::{
-    api::WsUrl,
-    api::market::{MarketPrice, request::ClientRequest},
+    api::{
+        WsUrl,
+        market::{MarketPrice, request::ClientRequest},
+        orderbook::ActiveOrderbooks,
+    },
     metrics::ClientMetrics,
     trade::{Instrument, Price},
 };
@@ -22,6 +25,8 @@ pub struct MarketDataProvider {
     instruments: Vec<Instrument>,
     /// Channel used to send price events to the engine
     price_sender_channel: Sender<MarketPrice>,
+    /// Orderbooks that are currently logged in
+    active_orderbooks: ActiveOrderbooks,
     /// Track metrics
     metrics: ClientMetrics,
 }
@@ -32,6 +37,7 @@ impl MarketDataProvider {
         url: WsUrl,
         instruments: Vec<Instrument>,
         price_sender_channel: Sender<MarketPrice>,
+        active_orderbooks: ActiveOrderbooks,
         metrics: ClientMetrics,
     ) -> Self {
         Self {
@@ -39,6 +45,7 @@ impl MarketDataProvider {
             url,
             instruments,
             price_sender_channel,
+            active_orderbooks,
             metrics,
         }
     }
@@ -87,6 +94,14 @@ impl MarketDataProvider {
                                     continue;
                                 }
                             };
+                            if !self
+                                .active_orderbooks
+                                .read()
+                                .await
+                                .contains_key(&instrument)
+                            {
+                                continue;
+                            }
                             let value = match Price::try_from(price.value) {
                                 Ok(value) => value,
                                 Err(error) => {

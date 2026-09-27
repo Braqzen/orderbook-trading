@@ -1,16 +1,13 @@
 use crate::{
     api::{
-        CancelRejection, CancelRejectionReason, Cancelled, ConnectionRegistry, OrderAccepted,
-        OrderRejection, Response,
+        CancelRejection, CancelRejectionReason, Cancelled, OrderAccepted, OrderRejection, Response,
+        SessionStore,
     },
     metrics::OrderbookMetrics,
     trade::{Instrument, LimitOrder, OrderBook, OrderType, Price, Quantity, Request, RiskAnalyser},
 };
 use eyre::Result;
-use tokio::{
-    select,
-    sync::mpsc::{Receiver, error::TrySendError},
-};
+use tokio::{select, sync::mpsc::Receiver};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -20,7 +17,7 @@ pub struct Engine {
     book: OrderBook,
     risk: RiskAnalyser,
     order_receiver: Receiver<Request>,
-    connection_registry: ConnectionRegistry,
+    sessions: SessionStore,
     metrics: OrderbookMetrics,
 }
 
@@ -28,7 +25,7 @@ impl Engine {
     pub fn new(
         instrument: Instrument,
         order_receiver: Receiver<Request>,
-        connection_registry: ConnectionRegistry,
+        sessions: SessionStore,
         metrics: OrderbookMetrics,
     ) -> Self {
         Self {
@@ -36,7 +33,7 @@ impl Engine {
             book: OrderBook::new(),
             risk: RiskAnalyser::new(instrument),
             order_receiver,
-            connection_registry,
+            sessions,
             metrics,
         }
     }
@@ -83,7 +80,12 @@ impl Engine {
 
                 let client_id = order.client_id;
                 let rejection = OrderRejection::new(instrument, price, order, reason);
-                self.send_response(client_id, Response::OrderRejected(rejection))
+                self.sessions
+                    .send_response(
+                        &self.instrument,
+                        client_id,
+                        Response::OrderRejected(rejection),
+                    )
                     .await;
 
                 return;
@@ -120,17 +122,21 @@ impl Engine {
         );
 
         for (client_id, trade) in result.trades {
-            self.send_response(client_id, Response::Trade(trade)).await;
+            self.sessions
+                .send_response(&self.instrument, client_id, Response::Trade(trade))
+                .await;
         }
 
         if Quantity::ZERO < remaining {
-            self.send_response(
-                order.client_id,
-                Response::OrderAccepted(OrderAccepted {
-                    order_id: order.order_id,
-                }),
-            )
-            .await;
+            self.sessions
+                .send_response(
+                    &self.instrument,
+                    order.client_id,
+                    Response::OrderAccepted(OrderAccepted {
+                        order_id: order.order_id,
+                    }),
+                )
+                .await;
         }
     }
 
@@ -152,7 +158,12 @@ impl Engine {
                 side = %side,
                 "Order cancelled"
             );
-            self.send_response(client_id, Response::Cancelled(Cancelled { order_id }))
+            self.sessions
+                .send_response(
+                    &self.instrument,
+                    client_id,
+                    Response::Cancelled(Cancelled { order_id }),
+                )
                 .await;
         } else {
             warn!(
@@ -163,38 +174,16 @@ impl Engine {
                 side = %side,
                 "Cancel rejected"
             );
-            self.send_response(
-                client_id,
-                Response::CancelRejected(CancelRejection {
-                    order_id,
-                    reason: CancelRejectionReason::OrderNotFound,
-                }),
-            )
-            .await;
-        }
-    }
-
-    async fn send_response(&self, client_id: Uuid, response: Response) {
-        let client = {
-            let registry = self.connection_registry.read().await;
-            registry.get(&client_id).cloned()
-        };
-
-        match client {
-            Some(client) => match client.try_send(response) {
-                Ok(()) => {}
-                Err(TrySendError::Closed(_)) => {
-                    warn!(instrument = %self.instrument, client = %client_id, "Client is not connected");
-                }
-                Err(TrySendError::Full(_)) => {
-                    warn!(instrument = %self.instrument, client = %client_id, "Client outbound queue full");
-                    client.disconnect();
-                    self.connection_registry.write().await.remove(&client_id);
-                }
-            },
-            None => {
-                warn!(instrument = %self.instrument, client = %client_id, "Client is not connected");
-            }
+            self.sessions
+                .send_response(
+                    &self.instrument,
+                    client_id,
+                    Response::CancelRejected(CancelRejection {
+                        order_id,
+                        reason: CancelRejectionReason::OrderNotFound,
+                    }),
+                )
+                .await;
         }
     }
 }

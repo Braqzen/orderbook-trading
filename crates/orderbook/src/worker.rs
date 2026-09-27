@@ -1,15 +1,15 @@
 use crate::{
-    api::{ConnectionRegistry, WsServer},
+    api::{SessionStore, WsServer},
     engine::Engine,
     metrics::OrderbookMetrics,
     trade::Instrument,
 };
 use eyre::Result;
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 use tokio::{
     select,
     signal::unix::{SignalKind, signal},
-    sync::{RwLock, mpsc},
+    sync::mpsc,
     task::{JoinError, JoinSet},
 };
 use tokio_util::sync::CancellationToken;
@@ -30,7 +30,7 @@ impl Worker {
     pub fn new(ws: SocketAddr, instrument: String) -> Result<Self> {
         let instrument = Instrument::try_from(instrument.as_str())?;
         let (order_sender, order_receiver) = mpsc::channel(GLOBAL_ORDER_QUEUE);
-        let connection_registry: ConnectionRegistry = Arc::new(RwLock::new(HashMap::new()));
+        let sessions = SessionStore::new();
         let metrics = OrderbookMetrics::new(&instrument);
 
         Ok(Self {
@@ -39,10 +39,10 @@ impl Worker {
                 ws,
                 instrument.clone(),
                 order_sender,
-                connection_registry.clone(),
+                sessions.clone(),
                 metrics.clone(),
             ),
-            engine: Engine::new(instrument, order_receiver, connection_registry, metrics),
+            engine: Engine::new(instrument, order_receiver, sessions, metrics),
         })
     }
 
