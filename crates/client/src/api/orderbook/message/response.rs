@@ -72,6 +72,7 @@ pub struct CancelRejection {
 #[serde(rename_all = "snake_case")]
 pub enum RejectionReason {
     InvalidInstrument,
+    InvalidOrderSize,
 }
 
 #[derive(Debug, Deserialize)]

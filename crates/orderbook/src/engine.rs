@@ -39,7 +39,7 @@ impl Engine {
         Self {
             instrument: instrument.clone(),
             book: OrderBook::new(),
-            risk: RiskAnalyser::new(instrument),
+            risk: RiskAnalyser::new(),
             order_receiver,
             sessions,
             metrics,
@@ -78,7 +78,7 @@ impl Engine {
     /// Processes a new order / trade request
     async fn handle_place(&mut self, instrument: Instrument, price: Price, order: LimitOrder) {
         // Determine if this order passes arbitrary safety checks or if it must be rejected
-        match self.risk.evaluate(&instrument, &order, &price) {
+        match self.risk.evaluate(&order, &price) {
             Ok(()) => {}
             Err(reason) => {
                 warn!(

@@ -18,6 +18,10 @@ impl Quantity {
         self.0 as f64 / ATOMS_PER_UNIT as f64
     }
 
+    pub fn valid_size(self) -> bool {
+        self.0 % ORDER_SIZE_ATOM_STEP == 0
+    }
+
     pub fn checked_add(self, rhs: Self) -> Result<Self, String> {
         self.0
             .checked_add(rhs.0)

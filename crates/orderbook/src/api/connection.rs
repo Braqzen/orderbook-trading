@@ -3,9 +3,13 @@
 //! session when the connection ends.
 
 use crate::{
-    api::{ClientMessage, LoginRejectionReason, LoginRequest, RawMessage, Response, SessionStore},
+    api::{
+        ClientMessage, LoginRejectionReason, LoginRequest, OrderRejection, RawMessage, Response,
+        SessionStore,
+    },
     metrics::OrderbookMetrics,
-    trade::{Instrument, LimitOrder, ORDER_SIZE_ATOM_STEP, Price, Quantity, Request},
+    trade::RejectionReason,
+    trade::{Instrument, LimitOrder, Price, Quantity, Request},
 };
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
@@ -24,6 +28,8 @@ use uuid::Uuid;
 /// Number of orders a client can send to the server to buffer
 const ORDER_QUEUE: usize = 16;
 /// Number of messages that can be made in the engine and buffered before publishing
+///
+/// Significantly larger that [`ORDER_QUEUE`] because we may need to queue many trade responses
 const OUTBOUND_QUEUE_SIZE: usize = 1024;
 /// Quantity of time before a connection is dropped when publishing
 const OUTBOUND_SEND_TIMEOUT: Duration = Duration::from_secs(2);
@@ -31,6 +37,7 @@ const OUTBOUND_SEND_TIMEOUT: Duration = Duration::from_secs(2);
 pub struct Connection {
     /// Client stream
     stream: TcpStream,
+    /// Used for logging
     instrument: Instrument,
     /// Channel to send client requests to engine
     order_sender_channel: Sender<Request>,
@@ -316,8 +323,26 @@ async fn process_order(
         return ProcessOrderOutcome::Continue;
     }
 
-    let Some(request) = create_trade_request(client_id, message) else {
-        return ProcessOrderOutcome::Continue;
+    let request = match create_trade_request(instrument, client_id, message) {
+        Ok(request) => request,
+        Err(rejection) => {
+            warn!(
+                %instrument,
+                %client_id,
+                order = %rejection.order_id,
+                ?rejection.reason,
+                "Order rejected at connection boundary"
+            );
+
+            if outbound_sender_channel
+                .try_send(Response::OrderRejected(rejection))
+                .is_err()
+            {
+                warn!(%instrument, %client_id, "Failed to send order rejection");
+            }
+
+            return ProcessOrderOutcome::Continue;
+        }
     };
 
     match client_order_sender.try_send(request) {
@@ -336,7 +361,11 @@ async fn process_order(
     }
 }
 
-fn create_trade_request(client_id: Uuid, raw_message: RawMessage) -> Option<Request> {
+fn create_trade_request(
+    book_instrument: &Instrument,
+    client_id: Uuid,
+    raw_message: RawMessage,
+) -> Result<Request, OrderRejection> {
     match raw_message {
         RawMessage::Place {
             instrument,
@@ -345,20 +374,25 @@ fn create_trade_request(client_id: Uuid, raw_message: RawMessage) -> Option<Requ
             side,
             order_id,
         } => {
-            if size.get() % ORDER_SIZE_ATOM_STEP != 0 {
-                warn!(
-                    %instrument,
-                    size = size.get(),
-                    "Order size must use at most six decimal places"
-                );
-                return None;
+            let price = Price::from(price.get());
+            let order_size = Quantity::from(size.get());
+
+            if instrument != *book_instrument {
+                return Err(OrderRejection {
+                    order_id,
+                    instrument,
+                    price,
+                    size: order_size,
+                    side,
+                    reason: RejectionReason::InvalidInstrument,
+                });
             }
 
-            let order = LimitOrder::new(Quantity::from(size.get()), side, client_id, order_id);
+            let order = LimitOrder::new(order_size, side, client_id, order_id);
 
-            Some(Request::Place {
-                instrument,
-                price: Price::from(price.get()),
+            Ok(Request::Place {
+                instrument: book_instrument.clone(),
+                price,
                 order,
             })
         }
@@ -366,7 +400,7 @@ fn create_trade_request(client_id: Uuid, raw_message: RawMessage) -> Option<Requ
             order_id,
             price,
             side,
-        } => Some(Request::Cancel {
+        } => Ok(Request::Cancel {
             client_id,
             order_id,
             price: Price::from(price.get()),
