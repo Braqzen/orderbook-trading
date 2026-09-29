@@ -1,3 +1,8 @@
+//! Risk Analyzer evaluates and accepts/rejects the order of a validated client
+//!
+//! An orderbook may have various checks before it can accept an order for trading
+//! This project does not currently perform any realistic checks and accepts all orders
+
 use crate::trade::{Instrument, LimitOrder, Price};
 use serde::Serialize;
 
@@ -10,6 +15,7 @@ impl RiskAnalyser {
         Self { instrument }
     }
 
+    // TODO: no checks atm so forcing instrument deep into engine instead of websocket boundary
     pub fn evaluate(
         &self,
         instrument: &Instrument,

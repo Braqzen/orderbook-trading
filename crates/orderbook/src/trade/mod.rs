@@ -16,4 +16,4 @@ pub use price::Price;
 pub use quantity::{ORDER_SIZE_ATOM_STEP, Quantity};
 pub use request::Request;
 pub use risk::{RejectionReason, RiskAnalyser};
-pub use trade::{Trade, TradeResult};
+pub use trade::{Match, Trade, TradeResult};

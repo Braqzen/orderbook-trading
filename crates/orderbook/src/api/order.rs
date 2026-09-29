@@ -1,3 +1,5 @@
+//! Wire types representing the actions a client may request from the service
+
 use crate::trade::{Instrument, OrderType};
 use serde::Deserialize;
 use std::num::NonZeroU64;
@@ -16,6 +18,7 @@ pub struct LoginRequest {
     pub client_id: Uuid,
 }
 
+// TODO: need better name
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum RawMessage {

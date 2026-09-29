@@ -1,3 +1,7 @@
+//! Central handler for one client on this instrument.
+//! It receives client messages, queues orders for the engine, returns responses, and cleans up the
+//! session when the connection ends.
+
 use crate::{
     api::{
         LoginRejectionReason, Response,
@@ -70,17 +74,12 @@ impl Connection {
             metrics,
         } = self;
 
-        let mut ws_stream = match accept_async(stream).await {
-            Ok(stream) => stream,
-            Err(error) => {
-                error!(%instrument, %error, "WebSocket handshake failed");
-                return Ok(());
-            }
-        };
+        let mut ws_stream = accept_async(stream).await?;
 
         let (client_order_sender, mut client_order_receiver) = channel::<Request>(ORDER_QUEUE);
         let (outbound_sender_channel, mut outbound_receiver_channel) =
             channel::<Response>(OUTBOUND_QUEUE_SIZE);
+
         let mut client_id = None;
         metrics.client_connected();
 
@@ -140,23 +139,27 @@ impl Connection {
                     }
                 }
 
-                // Orders are queued and bounded by channel, forward to engine channel for trading
+                // Orders are queued and bounded by channel for this connection
+                // Forward requests to global engine channel for trading
                 engine_request = client_order_receiver.recv() => {
                     let Some(request) = engine_request else {
                         break;
                     };
 
-                    let request_client_id = request.client_id();
-                    metrics.client_order_dequeued(request_client_id);
+                    // SAFETY: Invariant, can only be used here. 1st select branch sets the ID after login
+                    //         trades rejected if not logged in so safe here
+                    let id = client_id.expect("Client ID should always be set here");
+
+                    metrics.client_order_dequeued(id);
 
                     match order_sender_channel.try_send(request) {
                         Ok(()) => metrics.global_order_enqueued(),
                         Err(TrySendError::Closed(_)) => {
-                            error!(%instrument, ?client_id, "Order channel closed");
+                            error!(%instrument, client_id = %id, "Order channel closed");
                             break;
                         }
                         Err(TrySendError::Full(_)) => {
-                            warn!(%instrument, ?client_id, "Global order queue full");
+                            warn!(%instrument, client_id = %id, "Global order queue full");
                             break;
                         }
                     }
@@ -217,6 +220,8 @@ impl Connection {
     }
 }
 
+// TODO: code below is a mess and needs to be refactored.
+//       it is introducing a new enum and mixing actions with channel comms
 async fn process_login(
     instrument: &Instrument,
     sessions: &SessionStore,
@@ -315,7 +320,7 @@ async fn process_order(
         return ProcessOrderOutcome::Continue;
     }
 
-    let Some(request) = create_trade_request(instrument, client_id, message) else {
+    let Some(request) = create_trade_request(client_id, message) else {
         return ProcessOrderOutcome::Continue;
     };
 
@@ -335,11 +340,7 @@ async fn process_order(
     }
 }
 
-fn create_trade_request(
-    connection_instrument: &Instrument,
-    client_id: Uuid,
-    raw_message: RawMessage,
-) -> Option<Request> {
+fn create_trade_request(client_id: Uuid, raw_message: RawMessage) -> Option<Request> {
     match raw_message {
         RawMessage::Place {
             instrument,
@@ -350,7 +351,7 @@ fn create_trade_request(
         } => {
             if size.get() % ORDER_SIZE_ATOM_STEP != 0 {
                 warn!(
-                    instrument = %connection_instrument,
+                    %instrument,
                     size = size.get(),
                     "Order size must use at most six decimal places"
                 );

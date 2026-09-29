@@ -30,9 +30,7 @@ pub struct LoginRejection {
 #[serde(rename_all = "snake_case")]
 pub enum LoginRejectionReason {
     ClientAlreadyConnected,
-    ClientIdMismatch,
     NotLoggedIn,
-    AlreadyLoggedIn,
 }
 
 #[derive(Deserialize, Clone)]

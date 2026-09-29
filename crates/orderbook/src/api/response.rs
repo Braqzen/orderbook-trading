@@ -1,3 +1,5 @@
+//! Wire types representing responses for actions the service has performed on behalf of the client
+
 use crate::trade::{Instrument, LimitOrder, OrderType, Price, Quantity, RejectionReason, Trade};
 use serde::Serialize;
 use uuid::Uuid;
@@ -5,13 +7,26 @@ use uuid::Uuid;
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum Response {
+    /// A [`Trade`] has occured
     Trade(Trade),
+    /// An order has been added to the orderbook
     OrderAccepted(OrderAccepted),
+    /// An order has been rejected and not added to the orderbook
     OrderRejected(OrderRejection),
+    /// A cancel request has been accepted and an order has been removed from the book
     Cancelled(Cancelled),
+    /// A cancel request has been rejected and an order has not been removed
     CancelRejected(CancelRejection),
+    /// Client has successfully logged in
     LoginAccepted,
+    /// A client login attempt has been rejected
     LoginRejected(LoginRejection),
+}
+
+impl Response {
+    pub fn login_rejected(reason: LoginRejectionReason) -> Self {
+        Self::LoginRejected(LoginRejection { reason })
+    }
 }
 
 #[derive(Serialize)]
@@ -23,14 +38,7 @@ pub struct LoginRejection {
 #[serde(rename_all = "snake_case")]
 pub enum LoginRejectionReason {
     ClientAlreadyConnected,
-    ClientIdMismatch,
     NotLoggedIn,
-}
-
-impl Response {
-    pub fn login_rejected(reason: LoginRejectionReason) -> Self {
-        Self::LoginRejected(LoginRejection { reason })
-    }
 }
 
 #[derive(Serialize)]

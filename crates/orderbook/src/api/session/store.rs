@@ -1,3 +1,6 @@
+//! Maps each logged-in client to its live connection so the engine can send responses.
+//! Enforces one active session per client ID.
+
 use crate::{
     api::{LoginRejectionReason, Response, order::LoginRequest, session::record::ClientRecord},
     trade::Instrument,
@@ -63,6 +66,9 @@ impl SessionStore {
         self.clients.read().await.get(&client_id).cloned()
     }
 
+    // TODO: a session store is a data structure and not an actor. Sending should not be here
+    //       sending responses ought to be another task or send to a queue, worker sends to user
+    //       but if worker sends how does worker connect to user if orderbook is connected?
     pub async fn send_response(
         &self,
         instrument: &Instrument,

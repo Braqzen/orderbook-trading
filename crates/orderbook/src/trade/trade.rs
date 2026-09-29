@@ -1,8 +1,12 @@
-use crate::trade::{OrderType, Price, Quantity};
+use crate::trade::{LimitOrder, OrderType, Price, Quantity};
 use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 use uuid::Uuid;
 
+// TODO: move to api dir since it's a boundary type?
+/// Wire type storing information about a trade
+///
+/// Used to publish updates to client and for metrics
 #[derive(Serialize)]
 pub struct Trade {
     pub order_id: Uuid,
@@ -13,23 +17,56 @@ pub struct Trade {
 }
 
 impl Trade {
-    pub fn new(
-        order_id: Uuid,
-        side: OrderType,
-        price: Price,
-        size: Quantity,
-        remaining: Quantity,
-    ) -> Self {
+    pub fn new(price: Price, fill: &Fill) -> Self {
         Self {
-            order_id,
-            side,
+            order_id: fill.order_id,
+            side: fill.side,
             price,
-            size,
-            remaining,
+            size: fill.fill_size,
+            remaining: fill.remaining,
         }
     }
 }
 
+/// Internal type for the orderbook representing a unit of trade information
+pub struct Fill {
+    pub client_id: Uuid,
+    pub order_id: Uuid,
+    pub side: OrderType,
+    pub fill_size: Quantity,
+    pub remaining: Quantity,
+}
+
+impl Fill {
+    pub fn new(order: &LimitOrder, fill_size: Quantity) -> Self {
+        Self {
+            client_id: order.client_id,
+            order_id: order.order_id,
+            side: order.side,
+            fill_size,
+            remaining: order.size,
+        }
+    }
+}
+
+/// Wrapper storing information about both sides of the trade
+pub struct Match {
+    pub price: Price,
+    pub maker: Fill,
+    pub taker: Fill,
+}
+
+impl Match {
+    pub fn new(price: Price, maker: &LimitOrder, taker: &LimitOrder, fill_size: Quantity) -> Self {
+        Self {
+            price,
+            maker: Fill::new(maker, fill_size),
+            taker: Fill::new(taker, fill_size),
+        }
+    }
+}
+
+/// When a trade has occurred the status indicates the quantity of size that has been traded
 pub enum TradeStatus {
     Unfilled,
     Partial,
@@ -46,23 +83,19 @@ impl Display for TradeStatus {
     }
 }
 
+/// Single wrapper returning information about the outcome of a trade
 pub struct TradeResult {
-    pub trades: Vec<(Uuid, Trade)>,
-    pub filled: Quantity,
+    pub matches: Vec<Match>,
     pub remaining: Quantity,
 }
 
 impl TradeResult {
-    pub fn new(trades: Vec<(Uuid, Trade)>, filled: Quantity, remaining: Quantity) -> Self {
-        Self {
-            trades,
-            filled,
-            remaining,
-        }
+    pub fn new(matches: Vec<Match>, remaining: Quantity) -> Self {
+        Self { matches, remaining }
     }
 
     pub fn status(&self) -> TradeStatus {
-        if self.trades.is_empty() {
+        if self.matches.is_empty() {
             TradeStatus::Unfilled
         } else if Quantity::ZERO < self.remaining {
             TradeStatus::Partial
