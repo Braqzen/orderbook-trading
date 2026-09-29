@@ -4,12 +4,10 @@
 use crate::{
     api::{
         CancelRejection, CancelRejectionReason, Cancelled, OrderAccepted, OrderRejection, Response,
-        SessionStore,
+        SessionStore, Trade,
     },
     metrics::OrderbookMetrics,
-    trade::{
-        Instrument, LimitOrder, OrderBook, OrderType, Price, Quantity, Request, RiskAnalyser, Trade,
-    },
+    trade::{Instrument, LimitOrder, OrderBook, OrderType, Price, Quantity, Request, RiskAnalyser},
 };
 use eyre::Result;
 use tokio::{select, sync::mpsc::Receiver};

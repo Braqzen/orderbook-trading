@@ -2,7 +2,7 @@
 //! Enforces one active session per client ID.
 
 use crate::{
-    api::{LoginRejectionReason, Response, order::LoginRequest, session::record::ClientRecord},
+    api::{LoginRejectionReason, LoginRequest, Response, session::record::ClientRecord},
     trade::Instrument,
 };
 use std::{collections::HashMap, sync::Arc};

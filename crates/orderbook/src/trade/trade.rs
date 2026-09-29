@@ -1,32 +1,6 @@
 use crate::trade::{LimitOrder, OrderType, Price, Quantity};
-use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 use uuid::Uuid;
-
-// TODO: move to api dir since it's a boundary type?
-/// Wire type storing information about a trade
-///
-/// Used to publish updates to client and for metrics
-#[derive(Serialize)]
-pub struct Trade {
-    pub order_id: Uuid,
-    pub side: OrderType,
-    pub price: Price,
-    pub size: Quantity,
-    pub remaining: Quantity,
-}
-
-impl Trade {
-    pub fn new(price: Price, fill: &Fill) -> Self {
-        Self {
-            order_id: fill.order_id,
-            side: fill.side,
-            price,
-            size: fill.fill_size,
-            remaining: fill.remaining,
-        }
-    }
-}
 
 /// Internal type for the orderbook representing a unit of trade information
 pub struct Fill {

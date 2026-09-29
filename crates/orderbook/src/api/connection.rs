@@ -3,11 +3,7 @@
 //! session when the connection ends.
 
 use crate::{
-    api::{
-        LoginRejectionReason, Response,
-        order::{ClientMessage, LoginRequest, RawMessage},
-        session::SessionStore,
-    },
+    api::{ClientMessage, LoginRejectionReason, LoginRequest, RawMessage, Response, SessionStore},
     metrics::OrderbookMetrics,
     trade::{Instrument, LimitOrder, ORDER_SIZE_ATOM_STEP, Price, Quantity, Request},
 };
