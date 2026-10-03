@@ -1,3 +1,4 @@
+use crate::trade::symbols::asset::Asset;
 use eyre::{Result, ensure, eyre};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
@@ -32,27 +33,14 @@ impl TryFrom<&str> for Instrument {
         );
 
         Ok(Self {
-            base: Asset(base.to_owned()),
-            quote: Asset(quote.to_owned()),
+            base: Asset::new(base.to_owned()),
+            quote: Asset::new(quote.to_owned()),
         })
     }
 }
 
 impl Display for Instrument {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}-{}", self.base.0, self.quote.0)
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Eq, PartialEq, Hash)]
-pub struct Asset(String);
-
-impl Asset {
-    pub fn new(value: String) -> Self {
-        Self(value)
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
+        write!(formatter, "{}-{}", self.base.as_str(), self.quote.as_str())
     }
 }

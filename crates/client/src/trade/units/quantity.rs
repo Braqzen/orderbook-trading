@@ -1,4 +1,4 @@
-use crate::trade::{CENTS_PER_UNIT, Price};
+use crate::trade::units::{CENTS_PER_UNIT, Price};
 use serde::Serialize;
 use std::{
     fmt::{self, Display, Formatter},

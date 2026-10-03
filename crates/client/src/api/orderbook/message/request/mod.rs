@@ -1,20 +1,18 @@
-//! Types associated with sending a request to an orderbook
+//! Messages sent to the orderbook service.
+//!
+//! [`LoginRequest`] logs the client in, and [`Request`] places or cancels an order.
+
+mod login;
+mod metadata;
+
+pub use login::LoginRequest;
+pub use metadata::RequestMetadata;
 
 use crate::trade::{Instrument, Order, OrderType, Price, Quantity};
 use serde::Serialize;
 use uuid::Uuid;
 
-#[derive(Serialize)]
-pub struct LoginRequest {
-    client_id: Uuid,
-}
-
-impl LoginRequest {
-    pub fn new(client_id: Uuid) -> Self {
-        Self { client_id }
-    }
-}
-
+/// Message serialized and sent to the orderbook service.
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum Request {
@@ -50,10 +48,4 @@ impl Request {
             side,
         }
     }
-}
-
-#[derive(Clone)]
-pub struct RequestMetadata {
-    pub instrument: Instrument,
-    pub message: Request,
 }

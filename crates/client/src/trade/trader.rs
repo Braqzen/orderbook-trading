@@ -1,3 +1,8 @@
+//! The trader decides whether the client skips, places, or cancels an order when a price update arrives.
+//!
+//! It owns the inventory and the open orders.
+//! The engine sends the chosen action to the orderbook, and the trader applies the service response to that inventory.
+
 use crate::{
     api::{Cancelled, MarketPrice, OrderRejection, Trade},
     metrics::ClientMetrics,
@@ -11,6 +16,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 // TODO: expand to include strategies, perhaps general or per instrument
+// TODO: move client ID into struct for logging instead of params?
 pub struct Trader {
     /// Track the assets and balances
     inventory: Inventory,
@@ -36,7 +42,9 @@ impl Trader {
         }
     }
 
-    pub fn process_event(&self, price: MarketPrice) -> TradeAction {
+    /// Based on a price update decide the action to take
+    pub fn select_action(&self, price: MarketPrice) -> TradeAction {
+        // Currently, random-biased actions without a strategy
         let roll = rand::random::<f64>();
 
         let action = if roll < 0.5 {
@@ -58,6 +66,7 @@ impl Trader {
         action
     }
 
+    /// Creates an order and reserves the asset
     pub fn prepare_place(
         &mut self,
         client_id: Uuid,
@@ -74,7 +83,7 @@ impl Trader {
                 let amount = match size * price {
                     Ok(amount) => amount,
                     Err(error) => {
-                        warn!(client = %client_id, %error, %instrument, %side, %size, price = %price, "Invalid reserve amount");
+                        warn!(client = %client_id, %error, %instrument, %side, %size, %price, "Invalid reserve amount");
                         return None;
                     }
                 };
@@ -84,16 +93,17 @@ impl Trader {
         };
 
         if let Err(error) = self.inventory.reserve(&asset, amount) {
-            warn!(client = %client_id, %error, %instrument, %side, %size, price = %price, "Failed to reserve inventory");
+            warn!(client = %client_id, %error, %instrument, %side, %size, %price, "Failed to reserve inventory");
             return None;
         }
 
         self.record_asset(&asset);
-        info!(%instrument, price = %price, %size, %side, client=%client_id, order=%order_id, "Created order");
+        info!(%instrument, %price, %size, %side, client = %client_id, order = %order_id, "Created order");
 
         Some(order)
     }
 
+    /// Order has been sent so track it in open orders
     pub fn confirm_place(&mut self, order: Order) {
         self.metrics.record_order_submitted(&order);
         let instrument = order.instrument.clone();
@@ -101,6 +111,7 @@ impl Trader {
         self.record_open_orders(&instrument);
     }
 
+    /// Something went wrong, attempt to release the reserved asset
     pub fn rollback_place(&mut self, order: &Order) {
         let Some((asset, amount)) = self.reserve(order) else {
             return;
@@ -122,10 +133,13 @@ impl Trader {
         self.record_asset(&asset);
     }
 
-    pub fn order_for_cancel(&self, order_id: Uuid) -> Option<Order> {
+    pub fn opened_order(&self, order_id: Uuid) -> Option<Order> {
         self.open_orders.get(&order_id).cloned()
     }
 
+    /// Update inventory based on trade outcome
+    ///
+    /// If filled then remove from open orders else update remaining unfilled value
     pub fn apply_trade(&mut self, client_id: Uuid, trade: Trade) {
         let fill_size = Quantity::from(trade.size);
         let remaining = Quantity::from(trade.remaining);
@@ -143,7 +157,7 @@ impl Trader {
             side = %trade.side,
             price = %fill_price,
             size = %fill_size,
-            remaining = %remaining,
+            %remaining,
             "Trade executed"
         );
 
@@ -182,6 +196,7 @@ impl Trader {
         }
     }
 
+    /// Orderbook responded with a rejection so we must undo the asset reservation
     pub fn apply_order_rejection(&mut self, client_id: Uuid, rejection: OrderRejection) {
         let rejection_price = match Price::try_from(rejection.price) {
             Ok(rejection_price) => rejection_price,
@@ -217,6 +232,7 @@ impl Trader {
         );
     }
 
+    /// Orderbook accepted removal request, release the remaining reserve of asset
     pub fn apply_cancelled(&mut self, client_id: Uuid, cancelled: Cancelled) {
         let Some(order) = self.open_orders.get(&cancelled.order_id).cloned() else {
             warn!(client = %client_id, order = %cancelled.order_id, "Received cancel for unknown order");
@@ -243,6 +259,7 @@ impl Trader {
         );
     }
 
+    /// After safety checks randomly select values for side and quantity to place an order
     fn place_action(&self, price: MarketPrice) -> TradeAction {
         if self.inventory.available(price.instrument.base()).is_none()
             || self.inventory.available(price.instrument.quote()).is_none()
@@ -272,6 +289,7 @@ impl Trader {
         }
     }
 
+    /// Randomly select an order to cancel from open orders
     fn cancel_action(&self) -> TradeAction {
         if self.open_orders.is_empty() {
             return TradeAction::Skip;
@@ -285,6 +303,9 @@ impl Trader {
         TradeAction::Cancel { order_id }
     }
 
+    /// Translate an order into an instrument and quantity to reserve
+    ///
+    /// Does not alter state itself
     fn reserve(&self, order: &Order) -> Option<(Asset, Quantity)> {
         match order.side {
             OrderType::Buy => match order.size * order.price {
@@ -303,6 +324,7 @@ impl Trader {
         }
     }
 
+    /// Move the reserved funds to available for the specified order
     fn release_reserve(&mut self, client_id: Uuid, order: &Order) -> bool {
         let Some((asset, amount)) = self.reserve(order) else {
             return false;
@@ -332,12 +354,14 @@ impl Trader {
         true
     }
 
+    /// Iterate inventory assets and record metrics
     pub fn record_inventory(&self) {
         for asset in self.inventory.assets() {
             self.record_asset(&asset);
         }
     }
 
+    // Metrics
     fn record_asset(&self, asset: &Asset) {
         if let Some(available) = self.inventory.available(asset) {
             self.metrics.record_available(asset, available);
@@ -348,6 +372,7 @@ impl Trader {
         }
     }
 
+    // Metrics
     fn record_open_orders(&self, instrument: &Instrument) {
         let count = self
             .open_orders

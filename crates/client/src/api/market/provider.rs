@@ -1,3 +1,8 @@
+//! The market data provider subscribes and listens to price updates from specific instruments then forwards updates into the decision engine
+//!
+//! The client subscribes to specific instruments and filters out other updates because the provider sends all instrument updates through 1 connection.
+//! If the client is still connected to the orderbook/instrument the provider forwards the update to the engine for trade decisions.
+
 use crate::{
     api::{
         WsUrl,
@@ -10,7 +15,10 @@ use crate::{
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
-use tokio::{select, sync::mpsc::Sender};
+use tokio::{
+    select,
+    sync::mpsc::{Sender, error::TrySendError},
+};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -51,6 +59,7 @@ impl MarketDataProvider {
     }
 
     pub async fn run(self, token: CancellationToken) -> Result<()> {
+        // Create a single ws connection to the market provider which sends all instruments through 1 connection
         let (mut stream, _response) = connect_async(self.url.as_str()).await?;
 
         // TODO: ack/err handling instead of silently fail without response
@@ -76,9 +85,9 @@ impl MarketDataProvider {
 
                 _ = token.cancelled() => break,
 
-                // Listen to market data provider events and forward to engine for next step
-                message = stream.next() => {
-                    match message {
+                // Listen to market data provider events and forward to engine for next client step
+                market_message = stream.next() => {
+                    match market_message {
                         Some(Ok(Message::Text(text))) => {
                             let price = match serde_json::from_str::<PriceUpdate>(text.as_str()) {
                                 Ok(price) => price,
@@ -87,6 +96,7 @@ impl MarketDataProvider {
                                     continue;
                                 }
                             };
+
                             let instrument = match Instrument::try_from(price.instrument.as_str()) {
                                 Ok(instrument) => instrument,
                                 Err(error) => {
@@ -94,6 +104,8 @@ impl MarketDataProvider {
                                     continue;
                                 }
                             };
+
+                            // Do not forward price updates deeper into the engine if client is not connected to orderbook
                             if !self
                                 .active_orderbooks
                                 .read()
@@ -102,6 +114,7 @@ impl MarketDataProvider {
                             {
                                 continue;
                             }
+
                             let value = match Price::try_from(price.value) {
                                 Ok(value) => value,
                                 Err(error) => {
@@ -115,9 +128,15 @@ impl MarketDataProvider {
 
                             info!(client = %self.client_id, instrument = %price.instrument, price = %price.value, "Price update");
 
-                            if self.price_sender_channel.send(price).await.is_err() {
-                                error!(client = %self.client_id, "Failed to send price through channel");
-                                break;
+                            match self.price_sender_channel.try_send(price) {
+                                Ok(()) => {}
+                                Err(TrySendError::Full(_)) => {
+                                    warn!(client = %self.client_id, "Engine price queue full");
+                                }
+                                Err(TrySendError::Closed(_)) => {
+                                    error!(client = %self.client_id, "Engine price channel closed");
+                                    break;
+                                }
                             }
                         }
                         Some(Ok(Message::Close(_))) => {

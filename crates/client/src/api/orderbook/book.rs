@@ -1,3 +1,9 @@
+//! The orderbook is the outbound api boundary which sends requests to orderbooks.
+//!
+//! The engine may decide to take some action on a specific orderbook.
+//! This type accepts all decisions and forwards them to the connection which handles that specific request's orderbook.
+//! The connection handles direct orderbook communication (sending requests, receiving responses).
+
 use crate::{
     api::{
         Response, WsUrl,
@@ -9,7 +15,7 @@ use eyre::{Result, ensure, eyre};
 use std::collections::HashMap;
 use tokio::{
     select,
-    sync::mpsc::{self, Receiver, Sender, error::TrySendError},
+    sync::mpsc::{Receiver, Sender, error::TrySendError},
     task::{JoinError, JoinSet},
 };
 use tokio_util::sync::CancellationToken;
@@ -66,21 +72,17 @@ impl OrderBook {
 
         // Create a connection to each orderbook and forward requests to them based on which instrument they take
         // Connections will send requests and receive orderbook responses
-        // Responses are sent back to the engine for final accounting
+        // Orderbook service responses are sent back to the engine for final accounting
         for (instrument, url) in self.subscriptions {
-            let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
-
             let connection = Connection::new(
                 self.client_id,
                 instrument,
                 url,
-                order_sender_channel,
-                order_receiver_channel,
                 self.response_sender_channel.clone(),
                 self.active_orderbooks.clone(),
+                token.child_token(),
             );
-            let connection_token = token.child_token();
-            connections.spawn(connection.run(connection_token));
+            connections.spawn(connection.run());
         }
 
         loop {
@@ -120,6 +122,7 @@ impl OrderBook {
                     }
                 }
 
+                // When a connection task ends handle the result
                 result = connections.join_next(), if !connections.is_empty() => {
                     match result {
                         Some(Ok(Ok(()))) => {}

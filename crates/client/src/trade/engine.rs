@@ -1,5 +1,7 @@
+//! Uses the [`Trader`] to handle trading based on price updates and orderbook responses
+
 use crate::{
-    api::{ActiveOrderbooks, MarketPrice, Request, RequestMetadata, Response},
+    api::{ActiveOrderbooks, MarketPrice, RequestMetadata, Response},
     metrics::ClientMetrics,
     trade::{TradeAction, Trader},
 };
@@ -59,6 +61,7 @@ impl Engine {
 
                 _ = token.cancelled() => break,
 
+                // Process the response of the orderbook service
                 response = self.response_receiver_channel.recv() => {
                     let Some(response) = response else {
                         error!(client = %self.id, "Orderbook response channel closed");
@@ -90,6 +93,7 @@ impl Engine {
                     }
                 }
 
+                // The market data provider has emitted a new price update, evaluate price for trade action
                 price = self.price_receiver_channel.recv() => {
                     let Some(price) = price else {
                         error!(client = %self.id, "Market data provider channel closed");
@@ -105,7 +109,7 @@ impl Engine {
                         continue;
                     }
 
-                    match self.trader.process_event(price) {
+                    match self.trader.select_action(price) {
                         TradeAction::Skip => {}
                         TradeAction::Place {
                             instrument,
@@ -120,10 +124,7 @@ impl Engine {
                                 continue;
                             };
 
-                            let request = RequestMetadata {
-                                instrument: instrument.clone(),
-                                message: Request::place(order.clone()),
-                            };
+                            let request = RequestMetadata::place(&order);
 
                             if self.order_sender_channel.send(request).await.is_err() {
                                 self.trader.rollback_place(&order);
@@ -134,7 +135,7 @@ impl Engine {
                             self.trader.confirm_place(order);
                         }
                         TradeAction::Cancel { order_id } => {
-                            let Some(order) = self.trader.order_for_cancel(order_id) else {
+                            let Some(order) = self.trader.opened_order(order_id) else {
                                 warn!(client = %self.id, order = %order_id, "Cancel requested for unknown order");
                                 continue;
                             };
@@ -148,10 +149,7 @@ impl Engine {
                                 "Sending cancel"
                             );
 
-                            let request = RequestMetadata {
-                                instrument: order.instrument.clone(),
-                                message: Request::cancel(order_id, order.price, order.side),
-                            };
+                            let request = RequestMetadata::cancel(&order);
 
                             if self.order_sender_channel.send(request).await.is_err() {
                                 error!(client = %self.id, order = %order_id, "Order channel closed");

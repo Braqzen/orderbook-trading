@@ -1,19 +1,17 @@
 mod action;
 mod engine;
-mod instrument;
 mod inventory;
 mod limit;
 mod order;
-mod price;
-mod quantity;
+mod symbols;
 mod trader;
+mod units;
 
 pub use action::TradeAction;
 pub use engine::Engine;
-pub use instrument::{Asset, Instrument};
 pub use inventory::Inventory;
 pub use limit::TradeLimit;
 pub use order::{Order, OrderType};
-pub use price::{CENTS_PER_UNIT, Price};
-pub use quantity::{ORDER_SIZE_ATOM_STEP, Quantity};
+pub use symbols::{Asset, Instrument};
 pub use trader::Trader;
+pub use units::{ORDER_SIZE_ATOM_STEP, Price, Quantity};

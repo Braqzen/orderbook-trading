@@ -1,3 +1,7 @@
+//! Requests the market data provider accepts
+//!
+//! An example operation is subscribing to specific instrument price updates
+
 use serde::Serialize;
 use std::fmt::{self, Display, Formatter};
 
