@@ -1,23 +1,20 @@
-use crate::trade::{Instrument, LimitOrder, Price};
+//! Risk Analyzer evaluates and accepts/rejects the order of a validated client
+//!
+//! An orderbook may have various checks before it can accept an order for trading
+
+use crate::trade::{LimitOrder, Price};
 use serde::Serialize;
 
-pub struct RiskAnalyser {
-    instrument: Instrument,
-}
+pub struct RiskAnalyser;
 
 impl RiskAnalyser {
-    pub fn new(instrument: Instrument) -> Self {
-        Self { instrument }
+    pub fn new() -> Self {
+        Self
     }
 
-    pub fn evaluate(
-        &self,
-        instrument: &Instrument,
-        _order: &LimitOrder,
-        _price: &Price,
-    ) -> RiskResult {
-        if instrument != &self.instrument {
-            return Err(RejectionReason::InvalidInstrument);
+    pub fn evaluate(&self, order: &LimitOrder, _price: &Price) -> RiskResult {
+        if !order.size.valid_size() {
+            return Err(RejectionReason::InvalidOrderSize);
         }
 
         Ok(())
@@ -30,4 +27,5 @@ pub type RiskResult = Result<(), RejectionReason>;
 #[serde(rename_all = "snake_case")]
 pub enum RejectionReason {
     InvalidInstrument,
+    InvalidOrderSize,
 }

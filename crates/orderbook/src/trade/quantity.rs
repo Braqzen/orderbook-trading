@@ -1,6 +1,8 @@
 use serde::Serialize;
-use std::fmt::{self, Display, Formatter};
-use std::ops::SubAssign;
+use std::{
+    fmt::{self, Display, Formatter},
+    ops::SubAssign,
+};
 
 const ATOMS_PER_UNIT: u64 = 100_000_000;
 pub const ORDER_SIZE_ATOM_STEP: u64 = 100;
@@ -14,6 +16,10 @@ impl Quantity {
 
     pub fn as_units(self) -> f64 {
         self.0 as f64 / ATOMS_PER_UNIT as f64
+    }
+
+    pub fn valid_size(self) -> bool {
+        self.0 % ORDER_SIZE_ATOM_STEP == 0
     }
 
     pub fn checked_add(self, rhs: Self) -> Result<Self, String> {

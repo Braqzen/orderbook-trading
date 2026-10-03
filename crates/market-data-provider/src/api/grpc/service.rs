@@ -1,19 +1,18 @@
-use crate::{
-    proto::{PriceUpdate, market_data_provider_server::MarketDataProvider},
-    state::State,
-};
+use crate::proto::{PriceUpdate, market_data_provider_server::MarketDataProvider};
 use eyre::Result;
-use std::sync::Arc;
+use tokio::sync::broadcast::Sender;
 use tonic::{Request, Response, Status, Streaming};
 use tracing::info;
 
 pub struct MarketDataProviderService {
-    pub state: Arc<State>,
+    price_sender_channel: Sender<PriceUpdate>,
 }
 
 impl MarketDataProviderService {
-    pub fn new(state: Arc<State>) -> Self {
-        Self { state }
+    pub fn new(price_sender_channel: Sender<PriceUpdate>) -> Self {
+        Self {
+            price_sender_channel,
+        }
     }
 }
 
@@ -33,12 +32,8 @@ impl MarketDataProvider for MarketDataProviderService {
                         price = price.value,
                         "Price update"
                     );
-                    self.state
-                        .prices
-                        .write()
-                        .await
-                        .insert(price.instrument.clone(), price.value);
-                    let _ = self.state.price_sender_channel.send(price);
+
+                    let _ = self.price_sender_channel.send(price);
                 }
                 Ok(None) => return Ok(Response::new(())),
                 Err(error) => return Err(error),

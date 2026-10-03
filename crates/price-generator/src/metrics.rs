@@ -3,6 +3,7 @@ use opentelemetry::{KeyValue, global, metrics::Gauge};
 
 #[derive(Clone)]
 pub struct FeedMetrics {
+    /// Track the price per instrument
     price: Gauge<f64>,
 }
 

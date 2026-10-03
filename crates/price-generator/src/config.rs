@@ -1,4 +1,4 @@
-use crate::{instrument::Instrument, price::PriceConfig};
+use crate::{instrument::Instrument, simulation::PriceConfig};
 use eyre::{Result, ensure, eyre};
 use serde::Deserialize;
 use std::path::Path;
@@ -21,6 +21,7 @@ impl Config {
     }
 }
 
+/// Each entry in the config consists of an identifier, a start price and price constraints
 #[derive(Debug, Deserialize)]
 pub struct InstrumentFeed {
     symbol: String,

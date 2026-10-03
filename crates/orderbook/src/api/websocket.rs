@@ -1,5 +1,8 @@
+//! WebSocket entry point for one instrument.
+//! It listens for clients and spawns a connection handler for each accepted socket.
+
 use crate::{
-    api::{ConnectionRegistry, connection::Connection},
+    api::{SessionStore, connection::Connection},
     metrics::OrderbookMetrics,
     trade::{Instrument, Request},
 };
@@ -17,11 +20,12 @@ use tracing::error;
 pub struct WsServer {
     /// Bind the server to this socket
     socket: SocketAddr,
+    /// Used for logging
     instrument: Instrument,
     /// Send order requests from a client to the trading engine
     order_sender_channel: Sender<Request>,
     /// Track which clients are currently connected so we can stream their trades to them
-    connection_registry: ConnectionRegistry,
+    sessions: SessionStore,
     metrics: OrderbookMetrics,
 }
 
@@ -30,14 +34,14 @@ impl WsServer {
         socket: SocketAddr,
         instrument: Instrument,
         order_sender_channel: Sender<Request>,
-        connection_registry: ConnectionRegistry,
+        sessions: SessionStore,
         metrics: OrderbookMetrics,
     ) -> Self {
         Self {
             socket,
             instrument,
             order_sender_channel,
-            connection_registry,
+            sessions,
             metrics,
         }
     }
@@ -66,7 +70,7 @@ impl WsServer {
                             self.instrument.clone(),
                             self.order_sender_channel.clone(),
                             token.child_token(),
-                            self.connection_registry.clone(),
+                            self.sessions.clone(),
                             self.metrics.clone(),
                         )
                         .run(),

@@ -1,15 +1,23 @@
-use crate::instrument::Instrument;
-use eyre::{Result, ensure};
+use crate::{
+    instrument::Instrument,
+    simulation::{config::PriceConfig, price::Price},
+};
 use rand::{random_bool, random_range};
-use serde::{Deserialize, Serialize};
 
 /// Percentage of range treated as a zone that is too close to the limit
+///
+/// The closer a value is to the limit the smaller the zone between that value and the limit.
+/// When that zone is some percentage of the whole it is considered too close to the limit.
 const EDGE_ZONE_RATIO: f64 = 0.1;
 
 pub struct PriceManager {
+    /// The symbol associated with the generated price
     instrument: Instrument,
+    /// A mutable value representing the latest generated price
     current_price: f64,
+    /// Upper bound the price is allowed to drift towards
     upper_limit: f64,
+    /// Lower bound the price is allowed to drift towards
     lower_limit: f64,
 }
 
@@ -28,7 +36,7 @@ impl PriceManager {
         let magnitude = match random_range(0_u8..100) {
             0..=75 => random_range(0.0..0.001),
             76..=90 => random_range(0.001..0.01),
-            _ => random_range(0.01..=0.05),
+            _ => random_range(0.01..0.05),
         };
 
         // Figure out the range of acceptable values
@@ -66,41 +74,9 @@ impl PriceManager {
         let rounded = ((bounded * 100.0).round() / 100.0)
             .clamp(self.lower_limit + 0.01, self.upper_limit - 0.01);
 
+        // Make sure to update the price after each generation
         self.current_price = rounded;
 
         Price::new(self.instrument.clone(), rounded)
-    }
-}
-
-pub struct PriceConfig {
-    start_price: f64,
-    lower_limit: f64,
-    upper_limit: f64,
-}
-
-impl PriceConfig {
-    pub fn new(start_price: f64, upper_limit: f64, lower_limit: f64) -> Result<Self> {
-        ensure!(
-            lower_limit < start_price && start_price < upper_limit,
-            "Price must satisfy lower_limit < start_price < upper_limit"
-        );
-
-        Ok(Self {
-            start_price,
-            lower_limit,
-            upper_limit,
-        })
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Price {
-    pub instrument: Instrument,
-    pub value: f64,
-}
-
-impl Price {
-    pub fn new(instrument: Instrument, value: f64) -> Self {
-        Self { instrument, value }
     }
 }
