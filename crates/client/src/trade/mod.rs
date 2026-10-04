@@ -14,4 +14,4 @@ pub use limit::TradeLimit;
 pub use order::{Order, OrderType};
 pub use symbols::{Asset, Instrument};
 pub use trader::Trader;
-pub use units::{ORDER_SIZE_ATOM_STEP, Price, Quantity};
+pub use units::{ORDER_SIZE_PRECISION_FACTOR, Price, Quantity};

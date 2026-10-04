@@ -12,11 +12,7 @@ impl RiskAnalyser {
         Self
     }
 
-    pub fn evaluate(&self, order: &LimitOrder, _price: &Price) -> RiskResult {
-        if !order.size.valid_size() {
-            return Err(RejectionReason::InvalidOrderSize);
-        }
-
+    pub fn evaluate(&self, _order: &LimitOrder, _price: &Price) -> RiskResult {
         Ok(())
     }
 }

@@ -374,8 +374,19 @@ fn create_trade_request(
             side,
             order_id,
         } => {
-            let price = Price::from(price.get());
+            let price = Price::from(price);
             let order_size = Quantity::from(size.get());
+
+            if !order_size.valid_size() {
+                return Err(OrderRejection {
+                    order_id,
+                    instrument,
+                    price,
+                    size: order_size,
+                    side,
+                    reason: RejectionReason::InvalidOrderSize,
+                });
+            }
 
             if instrument != *book_instrument {
                 return Err(OrderRejection {
@@ -403,7 +414,7 @@ fn create_trade_request(
         } => Ok(Request::Cancel {
             client_id,
             order_id,
-            price: Price::from(price.get()),
+            price: Price::from(price),
             side,
         }),
     }

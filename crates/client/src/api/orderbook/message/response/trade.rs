@@ -1,4 +1,4 @@
-use crate::trade::OrderType;
+use crate::trade::{OrderType, Price};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -6,7 +6,7 @@ use uuid::Uuid;
 pub struct Trade {
     pub order_id: Uuid,
     pub side: OrderType,
-    pub price: u64,
+    pub price: Price,
     pub size: u64,
     pub remaining: u64,
 }

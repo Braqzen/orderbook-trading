@@ -1,6 +1,6 @@
 use crate::{
     api::WsUrl,
-    trade::{Asset, Instrument, ORDER_SIZE_ATOM_STEP, Quantity, TradeLimit},
+    trade::{Asset, Instrument, ORDER_SIZE_PRECISION_FACTOR, Quantity, TradeLimit},
 };
 use eyre::{Result, ensure, eyre};
 use serde::Deserialize;
@@ -86,9 +86,13 @@ fn parse_trade_limits(raw: HashMap<String, RawTradeLimit>) -> Result<HashMap<Ass
 
         // TODO: fix this const being used outside file
         ensure!(
-            minimum_size.atoms() % ORDER_SIZE_ATOM_STEP == 0
-                && maximum_size.atoms() % ORDER_SIZE_ATOM_STEP == 0,
+            minimum_size.atoms() % ORDER_SIZE_PRECISION_FACTOR == 0
+                && maximum_size.atoms() % ORDER_SIZE_PRECISION_FACTOR == 0,
             "Trade limits for {symbol} must use at most six decimal places"
+        );
+        ensure!(
+            minimum_size != Quantity::ZERO && minimum_size <= maximum_size,
+            "Trade limits for {symbol} require a positive minimum size no greater than the maximum"
         );
 
         trade_limits.insert(

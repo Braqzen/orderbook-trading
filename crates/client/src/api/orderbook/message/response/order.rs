@@ -1,4 +1,4 @@
-use crate::trade::{Instrument, OrderType};
+use crate::trade::{Instrument, OrderType, Price};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -11,7 +11,7 @@ pub struct OrderAccepted {
 pub struct OrderRejection {
     pub order_id: Uuid,
     pub instrument: Instrument,
-    pub price: u64,
+    pub price: Price,
     pub size: u64,
     pub side: OrderType,
     pub reason: RejectionReason,

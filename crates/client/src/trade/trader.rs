@@ -7,8 +7,8 @@ use crate::{
     api::{Cancelled, MarketPrice, OrderRejection, Trade},
     metrics::ClientMetrics,
     trade::{
-        Asset, Instrument, Inventory, ORDER_SIZE_ATOM_STEP, Order, OrderType, Price, Quantity,
-        TradeAction, TradeLimit,
+        Asset, Instrument, Inventory, ORDER_SIZE_PRECISION_FACTOR, Order, OrderType, Price,
+        Quantity, TradeAction, TradeLimit,
     },
 };
 use std::collections::HashMap;
@@ -143,13 +143,7 @@ impl Trader {
     pub fn apply_trade(&mut self, client_id: Uuid, trade: Trade) {
         let fill_size = Quantity::from(trade.size);
         let remaining = Quantity::from(trade.remaining);
-        let fill_price = match Price::try_from(trade.price) {
-            Ok(fill_price) => fill_price,
-            Err(error) => {
-                warn!(client = %client_id, %error, order = %trade.order_id, "Invalid fill price");
-                return;
-            }
-        };
+        let fill_price = trade.price;
 
         info!(
             client = %client_id,
@@ -198,13 +192,7 @@ impl Trader {
 
     /// Orderbook responded with a rejection so we must undo the asset reservation
     pub fn apply_order_rejection(&mut self, client_id: Uuid, rejection: OrderRejection) {
-        let rejection_price = match Price::try_from(rejection.price) {
-            Ok(rejection_price) => rejection_price,
-            Err(error) => {
-                warn!(client = %client_id, %error, order = %rejection.order_id, "Invalid rejection price");
-                return;
-            }
-        };
+        let rejection_price = rejection.price;
 
         let Some(order) = self.open_orders.get(&rejection.order_id).cloned() else {
             warn!(client = %client_id, order = %rejection.order_id, "Received rejection for unknown order");
@@ -279,7 +267,7 @@ impl Trader {
 
         let size =
             rand::random_range(limit.minimum_size.to_decimals()..=limit.maximum_size.to_decimals())
-                * ORDER_SIZE_ATOM_STEP;
+                * ORDER_SIZE_PRECISION_FACTOR;
 
         TradeAction::Place {
             instrument: price.instrument,
