@@ -1,5 +1,13 @@
-# orderbook-trading
+# Orderbook Trading
 
-> Note: WIP and not close to completion, missing lots of features atm check GH issues
+## Overview
 
-Documentation about the architecture, and how to run the project will be added after a few more features are implemented.
+This project demonstrates a time-priority based orderbook where clients react to subscribed price events and make trading decisions.
+
+Information:
+
+- [Architecture Components](./docs/architecture.md): Overview of components and their interactions
+- [End-to-end sequence diagrams](./docs/sequence.md): Example use cases from price generation to trading
+- [Client & Orderbook decisions](./docs/decision.md): How services perform decisions based on events
+
+## Usage
