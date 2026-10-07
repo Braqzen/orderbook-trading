@@ -8,14 +8,23 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct OrderbookMetrics {
+    /// Instrument id attached to every metric attribute set.
     instrument: String,
+    /// Active WebSocket clients for this instrument.
     connected_clients: UpDownCounter<i64>,
+    /// Pending orders in client or global processing queues.
     queue_size: UpDownCounter<i64>,
+    /// Open order count at each price level (side, price labels).
     level_orders: Gauge<u64>,
+    /// Aggregate quantity resting at each price level (side, price labels).
     level_quantity: Gauge<f64>,
+    /// Best bid or best ask on the book, by side label.
     best_price: Gauge<f64>,
+    /// Worst bid or worst ask on the book, by side label.
     worst_price: Gauge<f64>,
+    /// Cumulative trade count since process start for this instrument.
     trades: Counter<u64>,
+    /// Cumulative traded quantity since process start for this instrument.
     trade_size: Counter<f64>,
     // Since whole book scanned, we must reset removed levels to 0 or metrics retain last
     // value which inflated panels
@@ -110,6 +119,8 @@ impl OrderbookMetrics {
         );
     }
 
+    // TODO: iterating the whole book is inefficient, better to handle partial snapshot updates
+    //       partial updates will de-sync if 1 tick is lost, need to consider self-healing carefully
     pub fn record_orderbook(
         &mut self,
         book: &OrderBook,

@@ -1,3 +1,11 @@
+//! Tracks the balance of each asset and its state
+//!
+//! An asset has a balance which may be spent i.e. is available for use to place orders.
+//! When an order is placed that balance is no longer available but must be tracked therefore it is
+//! stored in the reserved field until some action makes it available again.
+//!
+//! The in-memory inventory representation ought to move toward permanent storage, e.g. cache or cold
+
 use crate::trade::{Asset, Order, Price, Quantity};
 use std::collections::HashMap;
 
@@ -10,7 +18,7 @@ impl Inventory {
     pub fn new(values: Vec<(String, Quantity)>) -> Self {
         let available = values
             .into_iter()
-            .map(|(asset, amount)| (Asset::from(asset), amount))
+            .map(|(asset, amount)| (Asset::new(asset), amount))
             .collect();
 
         Self {
@@ -31,6 +39,7 @@ impl Inventory {
         self.available.keys().cloned().collect()
     }
 
+    /// Move [`amount`] of [`asset`] from `available` to `reserved`
     pub fn reserve(&mut self, asset: &Asset, amount: Quantity) -> Result<(), String> {
         if amount <= Quantity::ZERO {
             return Err("reserve amount must be a positive finite value".to_owned());
@@ -58,6 +67,7 @@ impl Inventory {
         Ok(())
     }
 
+    /// Move [`amount`] of [`asset`] from `reserved` to `available`
     pub fn release(&mut self, asset: &Asset, amount: Quantity) -> Result<(), String> {
         if amount <= Quantity::ZERO {
             return Err("release amount must be a positive finite value".to_owned());
@@ -87,6 +97,7 @@ impl Inventory {
         Ok(())
     }
 
+    /// Orderbook responded with a buy trade event, update inventory
     pub fn apply_buy(
         &mut self,
         order: &Order,
@@ -140,6 +151,7 @@ impl Inventory {
         Ok(())
     }
 
+    /// Orderbook responded with a sell trade event, update inventory
     pub fn apply_sell(
         &mut self,
         order: &Order,

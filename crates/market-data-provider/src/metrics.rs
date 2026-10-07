@@ -2,7 +2,9 @@ use opentelemetry::{KeyValue, global, metrics::UpDownCounter};
 
 #[derive(Clone)]
 pub struct MarketDataProviderMetrics {
+    /// Tracks the number of currently connected clients
     connected_clients: UpDownCounter<i64>,
+    /// Tracks the number of currently subscribed instruments
     subscriptions: UpDownCounter<i64>,
 }
 

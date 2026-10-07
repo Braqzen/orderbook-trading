@@ -1,4 +1,6 @@
-use crate::{api::connection::Connection, metrics::MarketDataProviderMetrics, proto::PriceUpdate};
+use crate::{
+    api::websocket::connection::Connection, metrics::MarketDataProviderMetrics, proto::PriceUpdate,
+};
 use eyre::Result;
 use std::net::SocketAddr;
 use tokio::{
@@ -11,8 +13,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::error;
 
 pub struct WsServer {
+    /// Socket to run the server on
     socket: SocketAddr,
+    /// Broadcast sender used by clients to subscribe and create individual receivers
     price_sender_channel: Sender<PriceUpdate>,
+    /// Tracks metrics
     metrics: MarketDataProviderMetrics,
 }
 
@@ -26,6 +31,7 @@ impl WsServer {
     }
 
     pub async fn run(self, token: CancellationToken) -> Result<()> {
+        // Bind to a different socket than gRPC so clients can connect to ws server
         let listener = TcpListener::bind(self.socket).await?;
         let mut connections = JoinSet::new();
 
@@ -50,6 +56,7 @@ impl WsServer {
                         }
                     };
 
+                    // Each client connection is handled independently in the bg
                     let connection_token = token.child_token();
                     let price_receiver_channel = self.price_sender_channel.subscribe();
 

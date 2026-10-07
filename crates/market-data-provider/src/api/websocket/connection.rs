@@ -1,5 +1,5 @@
 use crate::{
-    api::request::{ClientRequest, Instruction, Operation},
+    api::websocket::request::{ClientRequest, Instruction, Operation},
     metrics::MarketDataProviderMetrics,
     proto::PriceUpdate,
 };
@@ -16,10 +16,15 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 pub struct Connection {
+    /// Stream to receive messages through
     stream: TcpStream,
+    /// Address to identify the client
     client: SocketAddr,
+    /// Individual subscribed receiver per client
     price_receiver_channel: Receiver<PriceUpdate>,
+    /// Token to handle shutdown requests
     token: CancellationToken,
+    /// Tracks metrics
     metrics: MarketDataProviderMetrics,
 }
 
@@ -49,8 +54,10 @@ impl Connection {
             }
         };
 
-        let mut subscriptions = HashSet::new();
         self.metrics.client_connected();
+
+        // Track which instruments the client has subscribed to and only send those updates
+        let mut subscriptions = HashSet::new();
 
         loop {
             select! {
@@ -58,17 +65,20 @@ impl Connection {
 
                 _ = self.token.cancelled() => break,
 
+                // Listen for messages send by the client to the server connection
                 message = ws_stream.next() => {
                     match message {
                         Some(Ok(Message::Text(payload))) => {
                             let request = match serde_json::from_str::<ClientRequest>(&payload) {
                                 Ok(request) => request,
                                 Err(error) => {
+                                    // TODO: should respond with error/ack if okay
                                     warn!(%error, "Received invalid client request");
                                     continue;
                                 }
                             };
 
+                            // TODO: extend operations to unsubscribing, auth
                             match request.op {
                                 Operation::Subscribe => {
                                     let Instruction::Instruments { instruments } =
@@ -97,9 +107,12 @@ impl Connection {
                     }
                 }
 
+                // Listen for price updates from gRPC
                 price_update = self.price_receiver_channel.recv() => {
+                    // TODO: it would be nice to track metrics for each client receiver queue
                     match price_update {
                         Ok(price_update) => {
+                            // Only forwards subscribed instruments
                             if !subscriptions.contains(&price_update.instrument) {
                                 continue;
                             }
@@ -116,6 +129,8 @@ impl Connection {
                                 "value": price_update.value,
                             });
 
+                            // Waits till we send then continue looping
+                            // Only block this connection
                             if let Err(error) = ws_stream
                                 .send(Message::Text(payload.to_string().into()))
                                 .await

@@ -1,3 +1,6 @@
+//! Stores limit orders at a single price level, in time-priority order.
+//! The book matches and cancels against the front of the queue first.
+
 use crate::trade::{LimitOrder, Quantity};
 use std::collections::VecDeque;
 use uuid::Uuid;

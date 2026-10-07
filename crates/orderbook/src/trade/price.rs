@@ -1,7 +1,13 @@
 use serde::Serialize;
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    num::NonZeroU64,
+};
 
-const CENTS_PER_UNIT: u64 = 100;
+/// Price is in cents which contains 2 decimal places.
+pub const PRICE_DECIMAL_PLACES: u32 = 2;
+/// Number of cents representing 1 price unit ($1 = 10^2 or 100 cents).
+const CENTS_PER_UNIT: u64 = 10_u64.pow(PRICE_DECIMAL_PLACES);
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq, Ord, PartialOrd, Serialize)]
 #[serde(transparent)]
@@ -13,9 +19,9 @@ impl Price {
     }
 }
 
-impl From<u64> for Price {
-    fn from(cents: u64) -> Self {
-        Self(cents)
+impl From<NonZeroU64> for Price {
+    fn from(cents: NonZeroU64) -> Self {
+        Self(cents.get())
     }
 }
 

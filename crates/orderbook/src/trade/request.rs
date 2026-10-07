@@ -1,3 +1,7 @@
+//! Internal type indicating user request to send to the engine
+//!
+//! Keep protocol/wire type separate in case we want to alter the internal type
+
 use crate::trade::{Instrument, LimitOrder, OrderType, Price};
 use uuid::Uuid;
 
@@ -13,13 +17,4 @@ pub enum Request {
         price: Price,
         side: OrderType,
     },
-}
-
-impl Request {
-    pub fn client_id(&self) -> Uuid {
-        match self {
-            Self::Place { order, .. } => order.client_id,
-            Self::Cancel { client_id, .. } => *client_id,
-        }
-    }
 }

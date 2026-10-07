@@ -1,10 +1,13 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 
-pub const CENTS_PER_UNIT: u64 = 100;
+/// Price is in cents which contains 2 decimal places.
+pub const PRICE_DECIMAL_PLACES: u32 = 2;
+/// Number of cents representing 1 price unit ($1 = 10^2 or 100 cents).
+pub const CENTS_PER_UNIT: u64 = 10_u64.pow(PRICE_DECIMAL_PLACES);
 
-#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, Ord, PartialOrd, Serialize)]
-#[serde(transparent)]
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(try_from = "u64")]
 pub struct Price(u64);
 
 impl Price {
@@ -13,6 +16,7 @@ impl Price {
     }
 }
 
+/// Used for converting values sent by the orderbook
 impl TryFrom<u64> for Price {
     type Error = String;
 
@@ -25,6 +29,7 @@ impl TryFrom<u64> for Price {
     }
 }
 
+/// Used for converting values sent by the market data provider
 impl TryFrom<f64> for Price {
     type Error = String;
 
