@@ -5,7 +5,7 @@ Each rectangle is an independently running service namely:
 - 1 Price Generator
 - 1 Market Data Provider
 - N number of clients
-- M number of orderbooks
+- 5 Orderbooks
 
 The `Price Generator` semi-randomly creates a price for each instrument at some interval. The price is dependent on the previous price with a slight delta and there are upper and lower bounds for each instrument.
 
