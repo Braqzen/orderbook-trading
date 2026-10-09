@@ -1,11 +1,19 @@
+//! Handles one client WebSocket connection
+//!
+//! Receives subscribe and unsubscribe requests, then forwards price updates for the instruments that client has subscribed to.
+
 use crate::{
-    api::websocket::request::{ClientRequest, Instruction, Operation},
+    api::websocket::{
+        request::{ClientRequest, Instruction, Operation},
+        response::Response,
+        subscription::Subscriptions,
+    },
     metrics::MarketDataProviderMetrics,
     proto::PriceUpdate,
 };
 use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
-use std::{collections::HashSet, net::SocketAddr};
+use std::net::SocketAddr;
 use tokio::{
     net::TcpStream,
     select,
@@ -46,6 +54,7 @@ impl Connection {
     }
 
     pub async fn run(mut self) -> Result<()> {
+        // Keep one stream because splitting does not guarantee delivery; reliable replay requires persistent message IDs
         let mut ws_stream = match accept_async(self.stream).await {
             Ok(stream) => stream,
             Err(error) => {
@@ -57,7 +66,7 @@ impl Connection {
         self.metrics.client_connected();
 
         // Track which instruments the client has subscribed to and only send those updates
-        let mut subscriptions = HashSet::new();
+        let mut subscriptions = Subscriptions::new();
 
         loop {
             select! {
@@ -72,30 +81,84 @@ impl Connection {
                             let request = match serde_json::from_str::<ClientRequest>(&payload) {
                                 Ok(request) => request,
                                 Err(error) => {
-                                    // TODO: should respond with error/ack if okay
+                                    // Respond with a protocol error instead of silently ignoring invalid requests
                                     warn!(%error, "Received invalid client request");
+
+                                    let payload = match serde_json::to_string(&Response::Rejected) {
+                                        Ok(payload) => payload,
+                                        Err(error) => {
+                                            error!(%error, "Failed to serialize invalid request response");
+                                            break;
+                                        }
+                                    };
+
+                                    if let Err(error) =
+                                        ws_stream.send(Message::Text(payload.into())).await
+                                    {
+                                        error!(%error, "Failed to send invalid request response");
+                                        break;
+                                    }
+
                                     continue;
                                 }
                             };
 
-                            // TODO: extend operations to unsubscribing, auth
-                            match request.op {
-                                Operation::Subscribe => {
-                                    let Instruction::Instruments { instruments } =
-                                        request.instruction;
+                            let Instruction::Instruments { instruments } = request.instruction;
 
-                                    for instrument in instruments {
-                                        if subscriptions.insert(instrument.clone()) {
-                                            self.metrics.instrument_subscribed(&instrument);
+                            // Bad request: client sent empty list
+                            let response = if instruments.is_empty() {
+                                warn!(client = %self.client, operation = %request.op, "Rejected empty subscription request");
+                                Response::Rejected
+                            } else {
+                                let (accepted, rejected) =
+                                    subscriptions.update(request.op, &instruments);
+
+                                for instrument in &accepted {
+                                    match request.op {
+                                        Operation::Subscribe => {
+                                            self.metrics.instrument_subscribed(instrument);
+                                        }
+                                        Operation::Unsubscribe => {
+                                            self.metrics.instrument_unsubscribed(instrument);
                                         }
                                     }
+                                }
 
+                                if rejected.is_empty() {
                                     info!(
                                         client = %self.client,
-                                        count = subscriptions.len(),
-                                        "Client subscribed"
+                                        operation = %request.op,
+                                        instruments = ?accepted,
+                                        count = subscriptions.subscriptions().count(),
+                                        "Client subscription changed"
+                                    );
+                                } else {
+                                    warn!(
+                                        client = %self.client,
+                                        operation = %request.op,
+                                        accepted = ?accepted,
+                                        rejected = ?rejected,
+                                        count = subscriptions.subscriptions().count(),
+                                        "Client subscription partially changed"
                                     );
                                 }
+
+                                Response::subscription(request.op, accepted, rejected)
+                            };
+
+                            let payload = match serde_json::to_string(&response) {
+                                Ok(payload) => payload,
+                                Err(error) => {
+                                    error!(%error, "Failed to serialize subscription response");
+                                    break;
+                                }
+                            };
+
+                            if let Err(error) =
+                                ws_stream.send(Message::Text(payload.into())).await
+                            {
+                                error!(%error, "Failed to send subscription response");
+                                break;
                             }
                         }
                         Some(Ok(Message::Close(_))) | None => break,
@@ -113,7 +176,7 @@ impl Connection {
                     match price_update {
                         Ok(price_update) => {
                             // Only forwards subscribed instruments
-                            if !subscriptions.contains(&price_update.instrument) {
+                            if !subscriptions.subscribed(&price_update.instrument) {
                                 continue;
                             }
 
@@ -124,15 +187,19 @@ impl Connection {
                                 "Sending price"
                             );
 
-                            let payload = serde_json::json!({
-                                "instrument": price_update.instrument,
-                                "value": price_update.value,
-                            });
+                            let response = Response::price(price_update);
+                            let payload = match serde_json::to_string(&response) {
+                                Ok(payload) => payload,
+                                Err(error) => {
+                                    error!(%error, "Failed to serialize price");
+                                    break;
+                                }
+                            };
 
                             // Waits till we send then continue looping
                             // Only block this connection
                             if let Err(error) = ws_stream
-                                .send(Message::Text(payload.to_string().into()))
+                                .send(Message::Text(payload.into()))
                                 .await
                             {
                                 error!(%error, "Failed to send price");
@@ -148,8 +215,8 @@ impl Connection {
             }
         }
 
-        for instrument in subscriptions {
-            self.metrics.instrument_unsubscribed(&instrument);
+        for instrument in subscriptions.subscriptions() {
+            self.metrics.instrument_unsubscribed(instrument);
         }
         self.metrics.client_disconnected();
 

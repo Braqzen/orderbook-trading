@@ -9,6 +9,7 @@ Information:
 - [Architecture Components](./docs/architecture.md): Overview of components and their relationships
 - [End-to-end sequence diagrams](./docs/sequence.md): Example use cases from price generation to trading
 - [Client & Orderbook decisions](./docs/decision.md): How services perform decisions based on events
+- [Instrument Subscriptions](./docs/subscription.md): Client-Provider instrument subscription handling
 
 ## Usage
 
