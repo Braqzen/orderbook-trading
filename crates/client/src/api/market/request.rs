@@ -2,7 +2,8 @@
 //!
 //! An example operation is subscribing to specific instrument price updates
 
-use serde::Serialize;
+use crate::trade::Instrument;
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 
 #[derive(Serialize)]
@@ -11,17 +12,29 @@ pub struct ClientRequest {
     pub instruction: Instruction,
 }
 
-#[derive(Serialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Operation {
     Subscribe,
+    Unsubscribe,
 }
 
 impl ClientRequest {
-    pub fn subscribe(instruments: Vec<String>) -> Self {
+    pub fn subscribe(instruments: Vec<Instrument>) -> Self {
         Self {
             op: Operation::Subscribe,
-            instruction: Instruction::Instruments { instruments },
+            instruction: Instruction::Instruments {
+                instruments: instruments.iter().map(ToString::to_string).collect(),
+            },
+        }
+    }
+
+    pub fn unsubscribe(instruments: Vec<Instrument>) -> Self {
+        Self {
+            op: Operation::Unsubscribe,
+            instruction: Instruction::Instruments {
+                instruments: instruments.iter().map(ToString::to_string).collect(),
+            },
         }
     }
 }
@@ -30,6 +43,7 @@ impl Operation {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Subscribe => "subscribe",
+            Self::Unsubscribe => "unsubscribe",
         }
     }
 }
