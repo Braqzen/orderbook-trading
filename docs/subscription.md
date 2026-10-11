@@ -1,6 +1,6 @@
 # Subscriptions
 
-## Market data provider
+## Market data provider gateway
 
 One WebSocket carries subscription changes and price updates.
 
@@ -50,14 +50,13 @@ flowchart TD
 
 ### Price update
 
-When the price generator sends an update for an instrument the provider checks which clients should receive the update.
-
-> Note: All connected clients receive updates through 1 price channel and filter based on instrument subscriptions. This is fine but at larger scales (more instruments, more clients) we'd lean toward 1 cache containing the latest price per instrument with a TTL and when a client is connected to a gateway and subscribed to some instrument it would receive those events.
+When the price generator sends an update for an instrument the aggregator stores the latest price in the cache and publishes a message. The gateway receives the message, reads that price and sends it to clients subscribed to that instrument.
 
 ```mermaid
 flowchart TD
-    Price["Provider receives a price<br/>for an instrument"] --> Subscribed{"Is this client subscribed<br/>to that instrument?"}
-
-    Subscribed -->|"Yes"| Send["Send Price<br/>with the instrument and value"]
-    Subscribed -->|"No"| Drop["Send nothing"]
+    Price["Aggregator receives price update"] --> Store["Store price in cache"]
+    Store --> Publish["Aggregator publishes<br/>through the cache"]
+    Publish --> Receive["Gateway receives the publish"]
+    Receive --> Read["Gateway reads that price<br/>from the cache"]
+    Read --> Send["Send Price<br/>to clients subscribed to that instrument"]
 ```

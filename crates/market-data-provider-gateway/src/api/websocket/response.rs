@@ -1,17 +1,17 @@
 //! Responses sent to the client
 //!
-//! The provider may send a price update for a subscribed instrument, information about the state of a subscription request,
+//! The gateway may send a price update for a subscribed instrument, information about the state of a subscription request,
 //! or a fallback rejection if it could not handle the request for an unexpected reason.
 //!
 //! Currently, it does not include information about the fallback so client cannot attempt to recover.
 
-use crate::api::websocket::request::Operation;
+use crate::{api::price::PriceUpdate, api::websocket::request::Operation};
 use serde::Serialize;
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case", tag = "type", content = "data")]
 pub enum Response {
-    Price(PriceUpdate),
+    Price(Price),
     Subscription(SubscriptionResponse),
     Rejected,
 }
@@ -40,8 +40,8 @@ pub enum SubscriptionResponse {
 }
 
 impl Response {
-    pub fn price(price: crate::proto::PriceUpdate) -> Self {
-        Self::Price(PriceUpdate {
+    pub fn price(price: PriceUpdate) -> Self {
+        Self::Price(Price {
             instrument: price.instrument,
             value: price.value,
         })
@@ -72,7 +72,7 @@ impl Response {
 }
 
 #[derive(Serialize)]
-pub struct PriceUpdate {
+pub struct Price {
     instrument: String,
     value: f64,
 }

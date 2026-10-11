@@ -1,18 +1,18 @@
-use crate::proto::{PriceUpdate, market_data_provider_server::MarketDataProvider};
-use eyre::Result;
-use tokio::sync::broadcast::Sender;
+//! Business logic handling receiving of gRPC events and setting values on an external cache (valkey)
+
+use crate::{
+    proto::PriceUpdate, proto::market_data_provider_server::MarketDataProvider, valkey::Cache,
+};
 use tonic::{Request, Response, Status, Streaming};
-use tracing::info;
+use tracing::{error, info};
 
 pub struct MarketDataProviderService {
-    price_sender_channel: Sender<PriceUpdate>,
+    cache: Cache,
 }
 
 impl MarketDataProviderService {
-    pub fn new(price_sender_channel: Sender<PriceUpdate>) -> Self {
-        Self {
-            price_sender_channel,
-        }
+    pub fn new(cache: Cache) -> Self {
+        Self { cache }
     }
 }
 
@@ -25,6 +25,7 @@ impl MarketDataProvider for MarketDataProviderService {
         let mut prices = request.into_inner();
 
         loop {
+            // Parks the task until a new message triggers a wake signal
             match prices.message().await {
                 Ok(Some(price)) => {
                     info!(
@@ -33,7 +34,10 @@ impl MarketDataProvider for MarketDataProviderService {
                         "Price update"
                     );
 
-                    let _ = self.price_sender_channel.send(price);
+                    if let Err(error) = self.cache.set(&price.instrument, price.value).await {
+                        error!(%error, instrument = %price.instrument, "Failed to store price");
+                        return Err(Status::internal(error.to_string()));
+                    }
                 }
                 Ok(None) => return Ok(Response::new(())),
                 Err(error) => return Err(error),

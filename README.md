@@ -9,7 +9,7 @@ Information:
 - [Architecture Components](./docs/architecture.md): Overview of components and their relationships
 - [End-to-end sequence diagrams](./docs/sequence.md): Example use cases from price generation to trading
 - [Client & Orderbook decisions](./docs/decision.md): How services perform decisions based on events
-- [Instrument Subscriptions](./docs/subscription.md): Client-Provider instrument subscription handling
+- [Instrument Subscriptions](./docs/subscription.md): Client-Gateway instrument subscription handling
 
 ## Usage
 
@@ -17,7 +17,7 @@ The services are run in `docker-compose` via `just` commands but you may use doc
 
 ### Build Services
 
-This builds the price generator, market data provider, client and orderbook programmes.
+This builds the price generator, market data provider, market data provider gateway, client and orderbook programmes.
 
 ```sh
 just build
