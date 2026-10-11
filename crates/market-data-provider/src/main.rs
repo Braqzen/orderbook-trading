@@ -1,11 +1,12 @@
 mod api;
-mod metrics;
+mod environment;
+mod valkey;
 mod worker;
 
+use environment::Environment;
 use eyre::{Result, eyre};
 use maiya::{Resource, logs::Logger, metrics::Metrics};
-use std::{net::SocketAddr, str::FromStr};
-use worker::Worker;
+use worker::{Worker, WorkerConfig};
 
 // Include the generated proto types
 pub mod proto {
@@ -20,12 +21,8 @@ async fn main() -> Result<()> {
     let logger = Logger::new(&resource, "market-data-provider")?;
     let metrics = Metrics::new(&resource)?;
 
-    let ws = std::env::var("WS")?;
-    let socket = std::env::var("SOCKET")?;
-
-    let ws = SocketAddr::from_str(&ws)?;
-    let socket = SocketAddr::from_str(&socket)?;
-    let worker = Worker::new(socket, ws);
+    let config = WorkerConfig::new(Environment::load()?)?;
+    let worker = Worker::new(config);
 
     let result = worker.run().await;
 

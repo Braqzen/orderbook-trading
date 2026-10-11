@@ -4,7 +4,8 @@ members = [
     "crates/client",
     "crates/price-generator",
     "crates/market-data-provider",
-    "crates/orderbook",
+    "crates/orderbook", 
+    "crates/market-data-provider-gateway",
 ]
 
 [workspace.dependencies]
@@ -14,6 +15,7 @@ maiya = { git = "https://github.com/Braqzen/maiya.git", tag = "v0.2.0" }
 opentelemetry = "0.32.0"
 prost = "0.14.4"
 rand = "0.10.1"
+redis = { version = "1.7.1", features = ["tokio-comp", "streams"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
 tonic = "0.14.6"

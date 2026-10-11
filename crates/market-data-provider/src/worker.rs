@@ -1,35 +1,47 @@
-use crate::{
-    api::{GrpcServer, WsServer},
-    proto::PriceUpdate,
-};
-use eyre::Result;
-use std::net::SocketAddr;
+//! The worker runs the market data provider.
+//!
+//! It receives price updates over gRPC and stores the latest price for each instrument in Valkey until shutdown.
+
+use crate::{api::GrpcServer, environment::Environment, valkey::Cache};
+use eyre::{Result, eyre};
+use std::{net::SocketAddr, str::FromStr};
 use tokio::{
+    select,
     signal::unix::{SignalKind, signal},
-    sync::broadcast,
-    task::{JoinError, JoinSet},
+    task::JoinError,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
+pub struct WorkerConfig {
+    socket: SocketAddr,
+    valkey_url: String,
+    ttl_seconds: u64,
+}
+
+impl WorkerConfig {
+    pub fn new(environment: Environment) -> Result<Self> {
+        let socket = SocketAddr::from_str(&environment.socket)?;
+        let ttl_seconds = environment
+            .ttl_seconds
+            .parse::<u64>()
+            .map_err(|error| eyre!("PRICE_TTL_SECONDS is invalid: {error}"))?;
+
+        Ok(Self {
+            socket,
+            valkey_url: environment.valkey_url,
+            ttl_seconds,
+        })
+    }
+}
+
 pub struct Worker {
-    grpc: GrpcServer,
-    ws: WsServer,
+    config: WorkerConfig,
 }
 
 impl Worker {
-    pub fn new(socket: SocketAddr, ws: SocketAddr) -> Self {
-        // Create 1 broadcast channel to send price updates through
-        // Each connected client subscribes to get their own receiver
-        let (price_sender_channel, _) = broadcast::channel::<PriceUpdate>(128);
-
-        // Each connection subscribes and gets its own receiver channel from the sender
-        let ws = WsServer::new(ws, price_sender_channel.clone());
-
-        // While the sender exists in gRPC to push updates to all subscribed clients
-        let grpc = GrpcServer::new(socket, price_sender_channel);
-
-        Self { grpc, ws }
+    pub fn new(config: WorkerConfig) -> Self {
+        Self { config }
     }
 
     pub async fn run(self) -> Result<()> {
@@ -38,32 +50,31 @@ impl Worker {
         // Handle running in a container and terminating the process with docker stop.
         let mut sigterm = signal(SignalKind::terminate())?;
 
+        let prices = Cache::connect(&self.config.valkey_url, self.config.ttl_seconds).await?;
+        let grpc = GrpcServer::new(self.config.socket, prices);
+
         let token = CancellationToken::new();
-        let grpc_token = token.child_token();
-        let ws_token = token.child_token();
+        let mut server = tokio::spawn(grpc.run(token.clone()));
 
-        let mut tasks = JoinSet::new();
-
-        tasks.spawn(self.grpc.run(grpc_token));
-        tasks.spawn(self.ws.run(ws_token));
-
-        tokio::select! {
-            Some(result) = tasks.join_next() => log_task_result(result),
-            _ = sigint.recv() => info!("Received interrupt signal"),
-            _ = sigterm.recv() => info!("Received terminate signal"),
-        }
-
-        token.cancel();
-
-        while let Some(result) = tasks.join_next().await {
-            log_task_result(result);
-        }
+        select! {
+            result = &mut server => log_server_result(result),
+            _ = sigint.recv() => {
+                info!("Received interrupt signal");
+                token.cancel();
+                log_server_result(server.await);
+            }
+            _ = sigterm.recv() => {
+                info!("Received terminate signal");
+                token.cancel();
+                log_server_result(server.await);
+            }
+        };
 
         Ok(())
     }
 }
 
-fn log_task_result(result: std::result::Result<Result<()>, JoinError>) {
+fn log_server_result(result: std::result::Result<Result<()>, JoinError>) {
     match result {
         Ok(Ok(())) => {}
         Ok(Err(error)) => error!(%error, "Service failed"),

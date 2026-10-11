@@ -1,24 +1,24 @@
-//! Handles one client WebSocket connection
+//! Handles one client WebSocket connection.
 //!
-//! Receives subscribe and unsubscribe requests, then forwards price updates for the instruments that client has subscribed to.
+//! Subscribe adds instrument price receivers. Unsubscribe removes them. This connection therefore
+//! receives price updates only for instruments the client currently selected.
 
 use crate::{
-    api::websocket::{
-        request::{ClientRequest, Instruction, Operation},
-        response::Response,
-        subscription::Subscriptions,
+    api::{
+        price::PriceChannels,
+        websocket::{
+            request::{ClientRequest, Instruction, Operation},
+            response::Response,
+            subscription::Subscriptions,
+        },
     },
-    metrics::MarketDataProviderMetrics,
-    proto::PriceUpdate,
+    metrics::GatewayMetrics,
 };
 use eyre::Result;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
 use std::net::SocketAddr;
-use tokio::{
-    net::TcpStream,
-    select,
-    sync::broadcast::{Receiver, error::RecvError},
-};
+use tokio::{net::TcpStream, select};
+use tokio_stream::{StreamExt, wrappers::errors::BroadcastStreamRecvError};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -28,32 +28,32 @@ pub struct Connection {
     stream: TcpStream,
     /// Address to identify the client
     client: SocketAddr,
-    /// Individual subscribed receiver per client
-    price_receiver_channel: Receiver<PriceUpdate>,
+    /// Instrument-specific price channels
+    prices: PriceChannels,
     /// Token to handle shutdown requests
     token: CancellationToken,
     /// Tracks metrics
-    metrics: MarketDataProviderMetrics,
+    metrics: GatewayMetrics,
 }
 
 impl Connection {
     pub fn new(
         stream: TcpStream,
         client: SocketAddr,
-        price_receiver_channel: Receiver<PriceUpdate>,
+        prices: PriceChannels,
         token: CancellationToken,
-        metrics: MarketDataProviderMetrics,
+        metrics: GatewayMetrics,
     ) -> Self {
         Self {
             stream,
             client,
-            price_receiver_channel,
+            prices,
             token,
             metrics,
         }
     }
 
-    pub async fn run(mut self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         // Keep one stream because splitting does not guarantee delivery; reliable replay requires persistent message IDs
         let mut ws_stream = match accept_async(self.stream).await {
             Ok(stream) => stream,
@@ -65,7 +65,8 @@ impl Connection {
 
         self.metrics.client_connected();
 
-        // Track which instruments the client has subscribed to and only send those updates
+        // Track which instruments/channel receivers the client has subscribed to
+        // All handles are managed by this single type, query 1 type instead of multiple channels
         let mut subscriptions = Subscriptions::new();
 
         loop {
@@ -74,44 +75,31 @@ impl Connection {
 
                 _ = self.token.cancelled() => break,
 
-                // Listen for messages send by the client to the server connection
+                // Listen for messages sent by the client
                 message = ws_stream.next() => {
                     match message {
                         Some(Ok(Message::Text(payload))) => {
                             let request = match serde_json::from_str::<ClientRequest>(&payload) {
                                 Ok(request) => request,
                                 Err(error) => {
-                                    // Respond with a protocol error instead of silently ignoring invalid requests
-                                    warn!(%error, "Received invalid client request");
-
-                                    let payload = match serde_json::to_string(&Response::Rejected) {
-                                        Ok(payload) => payload,
-                                        Err(error) => {
-                                            error!(%error, "Failed to serialize invalid request response");
-                                            break;
-                                        }
-                                    };
-
-                                    if let Err(error) =
-                                        ws_stream.send(Message::Text(payload.into())).await
+                                    warn!(client = %self.client, %error, "Received invalid client request");
+                                    if send_response(&mut ws_stream, &Response::Rejected).await
+                                        == WriteResult::Failed
                                     {
-                                        error!(%error, "Failed to send invalid request response");
                                         break;
                                     }
-
                                     continue;
                                 }
                             };
 
                             let Instruction::Instruments { instruments } = request.instruction;
-
-                            // Bad request: client sent empty list
                             let response = if instruments.is_empty() {
                                 warn!(client = %self.client, operation = %request.op, "Rejected empty subscription request");
                                 Response::Rejected
                             } else {
-                                let (accepted, rejected) =
-                                    subscriptions.update(request.op, &instruments);
+                                let (accepted, rejected) = subscriptions
+                                    .update(&self.prices, request.op, &instruments)
+                                    .await;
 
                                 for instrument in &accepted {
                                     match request.op {
@@ -146,70 +134,41 @@ impl Connection {
                                 Response::subscription(request.op, accepted, rejected)
                             };
 
-                            let payload = match serde_json::to_string(&response) {
-                                Ok(payload) => payload,
-                                Err(error) => {
-                                    error!(%error, "Failed to serialize subscription response");
-                                    break;
-                                }
-                            };
-
-                            if let Err(error) =
-                                ws_stream.send(Message::Text(payload.into())).await
+                            if send_response(&mut ws_stream, &response).await == WriteResult::Failed
                             {
-                                error!(%error, "Failed to send subscription response");
                                 break;
                             }
                         }
                         Some(Ok(Message::Close(_))) | None => break,
                         Some(Err(error)) => {
-                            error!(%error, "WebSocket connection failed");
+                            error!(client = %self.client, %error, "WebSocket connection failed");
                             break;
                         }
                         _ => {}
                     }
                 }
 
-                // Listen for price updates from gRPC
-                price_update = self.price_receiver_channel.recv() => {
-                    // TODO: it would be nice to track metrics for each client receiver queue
-                    match price_update {
-                        Ok(price_update) => {
-                            // Only forwards subscribed instruments
-                            if !subscriptions.subscribed(&price_update.instrument) {
-                                continue;
-                            }
-
+                // A price update has been sent for 1 of the subscribed instruments
+                price = subscriptions.next(), if !subscriptions.is_empty() => {
+                    match price {
+                        Some((_, Ok(price))) => {
                             info!(
                                 client = %self.client,
-                                instrument = price_update.instrument,
-                                price = price_update.value,
+                                instrument = price.instrument,
+                                price = price.value,
                                 "Sending price"
                             );
 
-                            let response = Response::price(price_update);
-                            let payload = match serde_json::to_string(&response) {
-                                Ok(payload) => payload,
-                                Err(error) => {
-                                    error!(%error, "Failed to serialize price");
-                                    break;
-                                }
-                            };
-
-                            // Waits till we send then continue looping
-                            // Only block this connection
-                            if let Err(error) = ws_stream
-                                .send(Message::Text(payload.into()))
-                                .await
+                            if send_response(&mut ws_stream, &Response::price(price)).await
+                                == WriteResult::Failed
                             {
-                                error!(%error, "Failed to send price");
                                 break;
                             }
                         }
-                        Err(RecvError::Lagged(skipped)) => {
-                            warn!(skipped, "WebSocket client lagged");
+                        Some((instrument, Err(BroadcastStreamRecvError::Lagged(skipped)))) => {
+                            warn!(client = %self.client, instrument, skipped, "WebSocket client lagged");
                         }
-                        Err(RecvError::Closed) => break,
+                        None => break,
                     }
                 }
             }
@@ -221,9 +180,36 @@ impl Connection {
         self.metrics.client_disconnected();
 
         if let Err(error) = ws_stream.close(None).await {
-            error!(%error, "Failed to close WebSocket connection");
+            error!(client = %self.client, %error, "Failed to close WebSocket connection");
         }
 
         Ok(())
     }
+}
+
+#[derive(PartialEq, Eq)]
+enum WriteResult {
+    Sent,
+    Failed,
+}
+
+/// Forwards the subscribed price update to the connected client
+async fn send_response(
+    stream: &mut tokio_tungstenite::WebSocketStream<TcpStream>,
+    response: &Response,
+) -> WriteResult {
+    let payload = match serde_json::to_string(response) {
+        Ok(payload) => payload,
+        Err(error) => {
+            error!(%error, "Failed to serialize client response");
+            return WriteResult::Failed;
+        }
+    };
+
+    if let Err(error) = stream.send(Message::Text(payload.into())).await {
+        error!(%error, "Failed to send client response");
+        return WriteResult::Failed;
+    }
+
+    WriteResult::Sent
 }

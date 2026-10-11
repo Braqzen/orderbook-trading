@@ -1,12 +1,17 @@
+//! Accepts client WebSocket connections.
+//!
+//! Each accepted socket runs as its own connection task.
+//! That task receives prices only for instruments the client currently selected.
+
 use crate::{
-    api::websocket::connection::Connection, metrics::MarketDataProviderMetrics, proto::PriceUpdate,
+    api::{price::PriceChannels, websocket::connection::Connection},
+    metrics::GatewayMetrics,
 };
 use eyre::Result;
 use std::net::SocketAddr;
 use tokio::{
     net::TcpListener,
     select,
-    sync::broadcast::Sender,
     task::{JoinError, JoinSet},
 };
 use tokio_util::sync::CancellationToken;
@@ -15,23 +20,22 @@ use tracing::error;
 pub struct WsServer {
     /// Socket to run the server on
     socket: SocketAddr,
-    /// Broadcast sender used by clients to subscribe and create individual receivers
-    price_sender_channel: Sender<PriceUpdate>,
+    /// Instrument-specific price channels
+    prices: PriceChannels,
     /// Tracks metrics
-    metrics: MarketDataProviderMetrics,
+    metrics: GatewayMetrics,
 }
 
 impl WsServer {
-    pub fn new(socket: SocketAddr, price_sender_channel: Sender<PriceUpdate>) -> Self {
+    pub fn new(socket: SocketAddr, prices: PriceChannels, metrics: GatewayMetrics) -> Self {
         Self {
             socket,
-            price_sender_channel,
-            metrics: MarketDataProviderMetrics::new(),
+            prices,
+            metrics,
         }
     }
 
     pub async fn run(self, token: CancellationToken) -> Result<()> {
-        // Bind to a different socket than gRPC so clients can connect to ws server
         let listener = TcpListener::bind(self.socket).await?;
         let mut connections = JoinSet::new();
 
@@ -56,16 +60,12 @@ impl WsServer {
                         }
                     };
 
-                    // Each client connection is handled independently in the bg
-                    let connection_token = token.child_token();
-                    let price_receiver_channel = self.price_sender_channel.subscribe();
-
                     connections.spawn(
                         Connection::new(
                             stream,
                             client,
-                            price_receiver_channel,
-                            connection_token,
+                            self.prices.clone(),
+                            token.child_token(),
                             self.metrics.clone(),
                         )
                         .run(),

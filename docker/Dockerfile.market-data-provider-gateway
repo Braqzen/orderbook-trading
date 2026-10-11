@@ -1,0 +1,28 @@
+FROM rust:1.96-bookworm AS chef
+RUN cargo install cargo-chef --version 0.1.77
+WORKDIR /app
+
+FROM chef AS planner
+COPY Cargo.toml Cargo.toml
+COPY crates crates
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
+    cargo chef cook --release --package market-data-provider-gateway --recipe-path recipe.json
+COPY Cargo.toml Cargo.toml
+COPY crates/market-data-provider-gateway crates/market-data-provider-gateway
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=private \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=private \
+    cargo build --release -p market-data-provider-gateway \
+    && cp /app/target/release/market-data-provider-gateway /app/market-data-provider-gateway
+
+FROM debian:bookworm-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/market-data-provider-gateway /app/server
+CMD ["/app/server"]

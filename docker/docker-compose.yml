@@ -35,11 +35,49 @@ services:
     environment:
       RUST_LOG: info
       SOCKET: 0.0.0.0:8000
-      WS: 0.0.0.0:8001
+      VALKEY_URL: redis://valkey:6379
+      PRICE_TTL_SECONDS: "5"
       <<: *common-env-telemetry
     depends_on:
       telemetry-alloy:
         condition: service_started
+      valkey:
+        condition: service_healthy
+    restart: unless-stopped
+
+  valkey:
+    image: valkey/valkey:9.1.2
+    command:
+      [
+        "valkey-server",
+        "--appendonly",
+        "yes",
+        "--appendfsync",
+        "everysec",
+        "--dir",
+        "/data"
+      ]
+    volumes:
+      - valkey-data-volume:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    restart: unless-stopped
+
+  market-data-provider-gateway:
+    image: orderbook-trading-market-data-provider-gateway:latest
+    environment:
+      RUST_LOG: info
+      WS: 0.0.0.0:8001
+      VALKEY_URL: redis://valkey:6379
+      <<: *common-env-telemetry
+    depends_on:
+      telemetry-alloy:
+        condition: service_started
+      valkey:
+        condition: service_healthy
     restart: unless-stopped
 
   client:
@@ -47,12 +85,12 @@ services:
     environment:
       RUST_LOG: info
       CONFIG_PATH: /app/config/client.json
-      MARKET_DATA_PROVIDER_URL: ws://market-data-provider:8001
+      MARKET_DATA_PROVIDER_URL: ws://market-data-provider-gateway:8001
       <<: *common-env-telemetry
     depends_on:
       telemetry-alloy:
         condition: service_started
-      market-data-provider:
+      market-data-provider-gateway:
         condition: service_started
       orderbook-eth:
         condition: service_started
@@ -152,6 +190,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  valkey-data-volume:
   grafana-data-volume:
   loki-data-volume:
   prometheus-data-volume:

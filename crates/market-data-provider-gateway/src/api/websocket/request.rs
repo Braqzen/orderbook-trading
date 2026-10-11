@@ -1,4 +1,4 @@
-//! Permitted requests to the provider by the client
+//! Permitted requests to the gateway by the client
 //!
 //! Currently, client may only subscribe/unsubscribe to specific instrument price updates
 

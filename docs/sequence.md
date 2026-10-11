@@ -2,7 +2,7 @@
 
 ## Client order partially filled
 
-After a client has subscribed to price updates from the `Market Data Provider` and completed the login sequence in an `Orderbook`, an incoming price event causes the client to place an order which is partially traded against existing orders and the unfilled/remainder of the order is added to the orderbook for future trades.
+After a client has subscribed to price updates from the `Market Data Provider Gateway` and completed the login sequence in an `Orderbook`, an incoming price event causes the client to place an order which is partially traded against existing orders and the unfilled/remainder of the order is added to the orderbook for future trades.
 
 In the case where an order is fully traded there is nothing to add to the book, whereas if no trades occur the full order is added.
 
@@ -10,15 +10,21 @@ In the case where an order is fully traded there is nothing to add to the book, 
 sequenceDiagram
     participant Generator as Price Generator
     participant MarketData as Market Data Provider
+    participant Cache as Price Cache
+    participant Gateway as Market Data Provider Gateway
     participant Client as Trading Client
     participant Orderbook as Instrument Orderbook
     participant OtherClient as Other Trading Client
 
-    Client->>MarketData: Subscribe to the instrument
+    Client->>Gateway: Subscribe to the instrument
     Client->>Orderbook: Log in with client ID
     Orderbook-->>Client: Login accepted
     Generator->>MarketData: New simulated price for an instrument
-    MarketData->>Client: Price update for the subscribed instrument
+    MarketData->>Cache: Store the latest price
+    MarketData->>Cache: Publish the instrument
+    Cache-->>Gateway: Publish received
+    Gateway->>Cache: Read the latest price
+    Gateway->>Client: Price update for the subscribed instrument
     Client->>Client: Decide to place a limit order
     Client->>Client: Choose buy or sell, price, and quantity
     Client->>Client: Reserve the balance needed for the order
@@ -38,14 +44,19 @@ When a price event comes in a client may choose to cancel an existing order at r
 ```mermaid
 sequenceDiagram
     participant MarketData as Market Data Provider
+    participant Cache as Price Cache
+    participant Gateway as Market Data Provider Gateway
     participant Client as Trading Client
     participant Orderbook as Instrument Orderbook
 
-    Client->>MarketData: Subscribe to the instrument
+    Client->>Gateway: Subscribe to the instrument
     Client->>Orderbook: Log in with client ID
     Orderbook-->>Client: Login accepted
     Note over Client,Orderbook: The client has an open order from an earlier placement
-    MarketData->>Client: Price update for the subscribed instrument
+    MarketData->>Cache: Publish the instrument
+    Cache-->>Gateway: Publish received
+    Gateway->>Cache: Read the latest price
+    Gateway->>Client: Price update for the subscribed instrument
     Client->>Client: Select one open order at random
     Client->>Orderbook: Cancel the order
     Orderbook->>Orderbook: Remove the remaining quantity
