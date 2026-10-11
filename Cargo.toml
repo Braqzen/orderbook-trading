@@ -4,7 +4,8 @@ members = [
     "crates/client",
     "crates/price-generator",
     "crates/market-data-provider",
-    "crates/orderbook", "crates/market-data-provider-gateway",
+    "crates/orderbook", 
+    "crates/market-data-provider-gateway",
 ]
 
 [workspace.dependencies]
