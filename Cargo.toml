@@ -3,9 +3,9 @@ resolver = "3"
 members = [
     "crates/client",
     "crates/price-generator",
-    "crates/market-data-provider",
+    "crates/price-aggregator",
     "crates/orderbook", 
-    "crates/market-data-provider-gateway",
+    "crates/market-data-gateway",
 ]
 
 [workspace.dependencies]
@@ -27,6 +27,3 @@ tokio-util = "0.7.19"
 tokio-tungstenite = "0.30.0"
 tracing = "0.1"
 uuid = { version = "1.24.0", features = ["v4", "serde"] }
-
-[profile.release.package.price-generator]
-debug = 1

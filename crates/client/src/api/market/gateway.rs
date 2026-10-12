@@ -1,7 +1,7 @@
-//! The market data provider subscribes and listens to price updates from specific instruments then forwards updates into the decision engine
+//! Connects to the market data gateway, subscribes to price updates for specific instruments, and forwards them into the decision engine
 //!
-//! The client subscribes to specific instruments and filters out other updates because the provider sends all instrument updates through 1 connection.
-//! If the client is still connected to the orderbook/instrument the provider forwards the update to the engine for trade decisions.
+//! The client subscribes to specific instruments. The gateway sends price updates for those instruments through 1 connection.
+//! If the client is still connected to the orderbook/instrument the client forwards the update to the engine for trade decisions.
 
 use crate::{
     api::{
@@ -35,10 +35,10 @@ const MIN_ACTION_DELAY_SECONDS: u64 = 60;
 /// Maximum time bound for when a subscription update may occur
 const MAX_ACTION_DELAY_SECONDS: u64 = 180;
 
-pub struct MarketDataProvider {
+pub struct MarketDataGateway {
     /// Used for attaching to logs
     client_id: Uuid,
-    /// Connect to the market data provider to receive price updates
+    /// Connect to the market data gateway to receive price updates
     url: WsUrl,
     /// Original and current instrument subscription state
     subscriptions: Subscriptions,
@@ -50,7 +50,7 @@ pub struct MarketDataProvider {
     metrics: ClientMetrics,
 }
 
-impl MarketDataProvider {
+impl MarketDataGateway {
     pub fn new(
         client_id: Uuid,
         url: WsUrl,
@@ -70,10 +70,10 @@ impl MarketDataProvider {
     }
 
     pub async fn run(mut self, token: CancellationToken) -> Result<()> {
-        // Create a single ws connection to the market provider which sends all instruments through 1 connection
+        // Create a single ws connection to the market data gateway which sends subscribed instruments through 1 connection
         let (mut stream, _response) = connect_async(self.url.as_str()).await?;
 
-        // First msg to provider tells them which instruments client is interested in for updates
+        // First msg to the gateway tells them which instruments client is interested in for updates
         let available_instruments = self.subscriptions.available();
         let subscribe = ClientRequest::subscribe(available_instruments.clone());
 
@@ -83,7 +83,7 @@ impl MarketDataProvider {
             return Err(error.into());
         }
 
-        info!(client = %self.client_id, instruments = ?available_instruments, "Subscribed to market data provider");
+        info!(client = %self.client_id, instruments = ?available_instruments, "Subscribed to market data gateway");
         for instrument in self.subscriptions.subscribed() {
             self.metrics.record_subscription(instrument, true);
         }
@@ -94,14 +94,14 @@ impl MarketDataProvider {
             select! {
                 _ = token.cancelled() => break,
 
-                // Listen to market data provider events and forward to engine for next client step
+                // Listen to market data gateway events and forward to engine for next client step
                 market_message = stream.next() => {
                     match market_message {
                         Some(Ok(Message::Text(text))) => {
                             let response = match serde_json::from_str::<Response>(text.as_str()) {
                                 Ok(response) => response,
                                 Err(error) => {
-                                    warn!(client = %self.client_id, %error, %text, "Failed to parse market data provider message");
+                                    warn!(client = %self.client_id, %error, %text, "Failed to parse market data gateway message");
                                     continue;
                                 }
                             };
@@ -116,7 +116,7 @@ impl MarketDataProvider {
                                     }
                                 }
                                 Response::Rejected => {
-                                    warn!(client = %self.client_id, "Market data provider rejected request");
+                                    warn!(client = %self.client_id, "Market data gateway rejected request");
                                 }
                                 Response::Subscription(subscription) => match subscription {
                                     SubscriptionResponse::Subscribed(instruments) => {
@@ -132,13 +132,13 @@ impl MarketDataProvider {
                                         warn!(client = %self.client_id, ?unsubscribed, ?rejected, "Market data unsubscribe partially accepted");
                                     }
                                     SubscriptionResponse::Rejected(instruments) => {
-                                        warn!(client = %self.client_id, ?instruments, "Market data provider rejected subscription change");
+                                        warn!(client = %self.client_id, ?instruments, "Market data gateway rejected subscription change");
                                     }
                                 },
                             }
                         }
                         Some(Ok(Message::Close(_))) => {
-                            error!(client = %self.client_id, "Market data provider explicitly closed connection");
+                            error!(client = %self.client_id, "Market data gateway explicitly closed connection");
                             break;
                         }
                         Some(Err(error)) => {
@@ -146,7 +146,7 @@ impl MarketDataProvider {
                             break;
                         }
                         None => {
-                            error!(client = %self.client_id, "Disconnected from market data provider");
+                            error!(client = %self.client_id, "Disconnected from market data gateway");
                             break;
                         }
                         _ => {
@@ -178,7 +178,7 @@ impl MarketDataProvider {
                         }
                     };
 
-                    // Causes incoming provider messages to pause/queue until this write flushes
+                    // Causes incoming gateway messages to pause/queue until this write flushes
                     if let Err(error) = stream.send(Message::Text(payload.into())).await {
                         error!(client = %self.client_id, %error, "Failed to send subscription change");
                         break;
@@ -207,7 +207,7 @@ impl MarketDataProvider {
         }
 
         if let Err(error) = stream.close(None).await {
-            error!(client = %self.client_id, %error, "Failed to close market data provider connection");
+            error!(client = %self.client_id, %error, "Failed to close market data gateway connection");
         }
 
         Ok(())

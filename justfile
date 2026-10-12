@@ -1,16 +1,16 @@
-default: build-price-generator build-market-data-provider build-market-data-provider-gateway build-client build-orderbook
+default: build-price-generator build-price-aggregator build-market-data-gateway build-client build-orderbook
 
-build: build-price-generator build-market-data-provider build-market-data-provider-gateway build-client build-orderbook
+build: build-price-generator build-price-aggregator build-market-data-gateway build-client build-orderbook
 
 # Rust
 build-price-generator:
 	docker build -f docker/Dockerfile.price-generator -t orderbook-trading-price-generator:latest .
 
-build-market-data-provider:
-	docker build -f docker/Dockerfile.market-data-provider -t orderbook-trading-market-data-provider:latest .
+build-price-aggregator:
+	docker build -f docker/Dockerfile.price-aggregator -t orderbook-trading-price-aggregator:latest .
 
-build-market-data-provider-gateway:
-	docker build -f docker/Dockerfile.market-data-provider-gateway -t orderbook-trading-market-data-provider-gateway:latest .
+build-market-data-gateway:
+	docker build -f docker/Dockerfile.market-data-gateway -t orderbook-trading-market-data-gateway:latest .
 
 build-client:
 	docker build -f docker/Dockerfile.client -t orderbook-trading-client:latest .

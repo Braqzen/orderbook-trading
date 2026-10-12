@@ -1,4 +1,4 @@
-//! The worker runs the market data provider gateway.
+//! The worker runs the market data gateway.
 //!
 //! It accepts client WebSocket connections and sends each client Valkey price updates
 //! for the instruments that client is subscribed to until shutdown.

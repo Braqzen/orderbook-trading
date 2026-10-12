@@ -24,14 +24,14 @@ const PUBLISH_INTERVAL: u64 = 10;
 const SPAWN_JITTER_MS: u64 = 5;
 
 pub struct Worker {
-    /// Market Data Provider URL to send gRPC price updates to
-    market_data_provider_url: String,
+    /// Price Aggregator URL to send gRPC price updates to
+    price_aggregator_url: String,
     /// Math to create a new price per config constraints
     price_managers: Vec<PriceManager>,
 }
 
 impl Worker {
-    pub fn new(market_data_provider_url: String, config: Config) -> Result<Self> {
+    pub fn new(price_aggregator_url: String, config: Config) -> Result<Self> {
         let price_managers = config
             .feeds
             .iter()
@@ -43,7 +43,7 @@ impl Worker {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
-            market_data_provider_url,
+            price_aggregator_url,
             price_managers,
         })
     }
@@ -58,9 +58,9 @@ impl Worker {
         let (price_sender_channel, price_receiver_channel) = mpsc::channel::<PriceUpdate>(128);
         let mut tasks = JoinSet::new();
 
-        // Receive generated prices from each manager and send them to the market data feed
+        // Receive generated prices from each manager and send them to the price aggregator
         let publisher_token = token.child_token();
-        let publisher = Publisher::new(self.market_data_provider_url, price_receiver_channel);
+        let publisher = Publisher::new(self.price_aggregator_url, price_receiver_channel);
         tasks.spawn(publisher.run(publisher_token));
 
         // Spawn a feed per instrument with a slight delay to stagger updates

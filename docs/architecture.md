@@ -3,17 +3,17 @@
 Each rectangle is an independently running service namely:
 
 - 1 Price Generator
-- 1 Market Data Provider
+- 1 Price Aggregator
 - 1 Price Cache
-- 1 Market Data Provider Gateway
+- 1 Market Data Gateway
 - N number of clients
 - 5 Orderbooks
 
 The `Price Generator` semi-randomly creates a price for each instrument at some interval. The price is dependent on the previous price with a slight delta and there are upper and lower bounds for each instrument.
 
-Every price update is sent to the `Market Data Provider` through `gRPC`.
+Every price update is sent to the `Price Aggregator` through `gRPC`.
 
-The provider stores the latest price for each instrument in the price cache. Clients are started with a random inventory that they track in-memory and subscribe to price updates from the `Market Data Provider Gateway` for their selected instruments. The connection between the gateway and client is a single `websocket`. The gateway reads the stored price and forwards it to clients subscribed to that instrument.
+The aggregator stores the latest price for each instrument in the price cache. Clients are started with a random inventory that they track in-memory and subscribe to price updates from the `Market Data Gateway` for their selected instruments. The connection between the gateway and client is a single `websocket`. The gateway reads the stored price and forwards it to clients subscribed to that instrument.
 
 When a client receives a price update it makes a decision if it should perform an action on an orderbook for that instrument.
 
@@ -24,9 +24,9 @@ The orderbook accepts clients requests after the client has completed a login se
 ```mermaid
 flowchart LR
     Generator["Price Generator"]
-    Provider["Market Data Provider"]
+    Aggregator["Price Aggregator"]
     Cache["Price Cache"]
-    Gateway["Market Data Provider Gateway"]
+    Gateway["Market Data Gateway"]
 
     subgraph Clients["Trading Clients"]
         Client1["Client 1"]
@@ -38,10 +38,10 @@ flowchart LR
         Ethereum["ETH-USD Orderbook"]
     end
 
-    Generator -->|"BTC-USD, ETH-USD, SOL-USD, and other price events"| Provider
+    Generator -->|"BTC-USD, ETH-USD, SOL-USD, and other price events"| Aggregator
     Gateway -->|"read latest price"| Cache
-    Provider -->|"store latest price"| Cache
-    Provider -->|"publish through the cache"| Gateway
+    Aggregator -->|"store latest price"| Cache
+    Aggregator -->|"publish through the cache"| Gateway
 
     Client1 -->|"subscribe to BTC-USD and ETH-USD"| Gateway
     Gateway -->|"BTC-USD and ETH-USD updates"| Client1

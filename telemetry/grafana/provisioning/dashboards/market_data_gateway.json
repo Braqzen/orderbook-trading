@@ -111,7 +111,7 @@
             "uid": "prometheus"
           },
           "editorMode": "builder",
-          "expr": "market_data_provider_clients_connected",
+          "expr": "market_data_gateway_clients_connected",
           "legendFormat": "connections",
           "range": true,
           "refId": "A"
@@ -210,7 +210,7 @@
             "uid": "prometheus"
           },
           "editorMode": "builder",
-          "expr": "market_data_provider_subscriptions",
+          "expr": "market_data_gateway_subscriptions",
           "legendFormat": "{{instrument}}",
           "range": true,
           "refId": "A"
@@ -233,7 +233,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Market Data Provider",
+  "title": "Market Data Gateway",
   "uid": "4b1bc1c9-bcad-4a4e-9a80-dd03f659caaa",
   "version": 1
 }

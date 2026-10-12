@@ -1,11 +1,11 @@
-//! Process environment for the market data provider.
+//! Process environment for the price aggregator.
 
 use eyre::Result;
 
 pub struct Environment {
     /// Bind to this socket to listen for generator instrument/price updates via gRPC
     pub socket: String,
-    /// Address of the Valkey service the provider connects to
+    /// Address of the Valkey service the aggregator connects to
     pub valkey_url: String,
     /// Seconds each stored price is kept before Valkey expires it
     pub ttl_seconds: String,

@@ -10,14 +10,14 @@ pub struct GatewayMetrics {
 
 impl GatewayMetrics {
     pub fn new() -> Self {
-        let meter = global::meter("market-data-provider-gateway");
+        let meter = global::meter("market-data-gateway");
 
         Self {
             connected_clients: meter
-                .i64_up_down_counter("market_data_provider.clients.connected")
+                .i64_up_down_counter("market_data_gateway.clients.connected")
                 .build(),
             subscriptions: meter
-                .i64_up_down_counter("market_data_provider.subscriptions")
+                .i64_up_down_counter("market_data_gateway.subscriptions")
                 .build(),
         }
     }

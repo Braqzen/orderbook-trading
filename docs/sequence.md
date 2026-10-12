@@ -2,16 +2,16 @@
 
 ## Client order partially filled
 
-After a client has subscribed to price updates from the `Market Data Provider Gateway` and completed the login sequence in an `Orderbook`, an incoming price event causes the client to place an order which is partially traded against existing orders and the unfilled/remainder of the order is added to the orderbook for future trades.
+After a client has subscribed to price updates from the `Market Data Gateway` and completed the login sequence in an `Orderbook`, an incoming price event causes the client to place an order which is partially traded against existing orders and the unfilled/remainder of the order is added to the orderbook for future trades.
 
 In the case where an order is fully traded there is nothing to add to the book, whereas if no trades occur the full order is added.
 
 ```mermaid
 sequenceDiagram
     participant Generator as Price Generator
-    participant MarketData as Market Data Provider
+    participant MarketData as Price Aggregator
     participant Cache as Price Cache
-    participant Gateway as Market Data Provider Gateway
+    participant Gateway as Market Data Gateway
     participant Client as Trading Client
     participant Orderbook as Instrument Orderbook
     participant OtherClient as Other Trading Client
@@ -43,9 +43,9 @@ When a price event comes in a client may choose to cancel an existing order at r
 
 ```mermaid
 sequenceDiagram
-    participant MarketData as Market Data Provider
+    participant MarketData as Price Aggregator
     participant Cache as Price Cache
-    participant Gateway as Market Data Provider Gateway
+    participant Gateway as Market Data Gateway
     participant Client as Trading Client
     participant Orderbook as Instrument Orderbook
 

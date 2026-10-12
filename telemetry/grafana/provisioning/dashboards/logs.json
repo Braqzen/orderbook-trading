@@ -114,7 +114,7 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"market-data-provider\"} |= `Price update` | line_format \"Price Update: {{.instrument}} ${{.price}}\"",
+          "expr": "{service_name=\"market-data-gateway\"} |= `Price update` | line_format \"Price Update: {{.instrument}} ${{.price}}\"",
           "hide": false,
           "queryType": "range",
           "refId": "B"
@@ -126,7 +126,7 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"market-data-provider\"} |= `Sending price` | line_format \"Sending Price: {{.instrument}} ${{.price}} | {{.client}}\"",
+          "expr": "{service_name=\"market-data-gateway\"} |= `Sending price` | line_format \"Sending Price: {{.instrument}} ${{.price}} | {{.client}}\"",
           "hide": false,
           "queryType": "range",
           "refId": "C"
@@ -138,13 +138,13 @@
           },
           "direction": "backward",
           "editorMode": "code",
-          "expr": "{service_name=\"market-data-provider\"} !~ `Price update|Sending price`",
+          "expr": "{service_name=\"market-data-gateway\"} !~ `Price update|Sending price`",
           "hide": false,
           "queryType": "range",
           "refId": "A"
         }
       ],
-      "title": "Market Data Provider",
+      "title": "Market Data Gateway",
       "type": "logs"
     }
   ],

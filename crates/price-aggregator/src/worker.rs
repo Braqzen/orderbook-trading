@@ -1,4 +1,4 @@
-//! The worker runs the market data provider.
+//! The worker runs the price aggregator.
 //!
 //! It receives price updates over gRPC and stores the latest price for each instrument in Valkey until shutdown.
 

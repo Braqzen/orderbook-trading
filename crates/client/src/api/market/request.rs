@@ -1,4 +1,4 @@
-//! Requests the market data provider accepts
+//! Requests the market data gateway accepts
 //!
 //! An example operation is subscribing to specific instrument price updates
 

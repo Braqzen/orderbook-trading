@@ -1,4 +1,4 @@
-//! Process environment for the market data provider gateway.
+//! Process environment for the market data gateway.
 
 use eyre::Result;
 

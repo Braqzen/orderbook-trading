@@ -10,15 +10,15 @@ use worker::{Worker, WorkerConfig};
 
 // Include the generated proto types
 pub mod proto {
-    tonic::include_proto!("marketdataprovider");
+    tonic::include_proto!("priceaggregator");
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let resource = Resource::builder()
-        .with_service_name("market-data-provider")
+        .with_service_name("price-aggregator")
         .build();
-    let logger = Logger::new(&resource, "market-data-provider")?;
+    let logger = Logger::new(&resource, "price-aggregator")?;
     let metrics = Metrics::new(&resource)?;
 
     let config = WorkerConfig::new(Environment::load()?)?;

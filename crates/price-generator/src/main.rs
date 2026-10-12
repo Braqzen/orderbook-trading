@@ -11,7 +11,7 @@ use maiya::{Resource, logs::Logger, metrics::Metrics};
 
 // Include the generated proto types
 pub mod proto {
-    tonic::include_proto!("marketdataprovider");
+    tonic::include_proto!("priceaggregator");
 }
 
 #[tokio::main]
@@ -22,11 +22,11 @@ async fn main() -> Result<()> {
     let logger = Logger::new(&resource, "price-generator")?;
     let metrics = Metrics::new(&resource)?;
 
-    let market_data_provider_url = std::env::var("MARKET_DATA_PROVIDER_URL")?;
+    let price_aggregator_url = std::env::var("PRICE_AGGREGATOR_URL")?;
     let config_path = std::env::var("CONFIG_PATH")?;
 
     let config = Config::new(config_path)?;
-    let worker = Worker::new(market_data_provider_url, config)?;
+    let worker = Worker::new(price_aggregator_url, config)?;
 
     let result = worker.run().await;
 
