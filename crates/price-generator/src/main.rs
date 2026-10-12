@@ -1,7 +1,7 @@
+mod api;
 mod config;
 mod instrument;
 mod metrics;
-mod publisher;
 mod simulation;
 mod worker;
 
@@ -11,7 +11,7 @@ use maiya::{Resource, logs::Logger, metrics::Metrics};
 
 // Include the generated proto types
 pub mod proto {
-    tonic::include_proto!("priceaggregator");
+    tonic::include_proto!("pricegenerator");
 }
 
 #[tokio::main]
@@ -22,11 +22,12 @@ async fn main() -> Result<()> {
     let logger = Logger::new(&resource, "price-generator")?;
     let metrics = Metrics::new(&resource)?;
 
-    let price_aggregator_url = std::env::var("PRICE_AGGREGATOR_URL")?;
+    // TODO: Environment and configs similar to other crates
+    let socket = std::env::var("SOCKET")?;
     let config_path = std::env::var("CONFIG_PATH")?;
 
     let config = Config::new(config_path)?;
-    let worker = Worker::new(price_aggregator_url, config)?;
+    let worker = Worker::new(socket, config)?;
 
     let result = worker.run().await;
 

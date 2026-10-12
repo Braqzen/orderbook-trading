@@ -10,7 +10,7 @@ use worker::{Worker, WorkerConfig};
 
 // Include the generated proto types
 pub mod proto {
-    tonic::include_proto!("priceaggregator");
+    tonic::include_proto!("pricegenerator");
 }
 
 #[tokio::main]
