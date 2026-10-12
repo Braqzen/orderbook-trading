@@ -11,9 +11,9 @@ use worker::{Worker, WorkerConfig};
 #[tokio::main]
 async fn main() -> Result<()> {
     let resource = Resource::builder()
-        .with_service_name("market-data-provider-gateway")
+        .with_service_name("market-data-gateway")
         .build();
-    let logger = Logger::new(&resource, "market-data-provider-gateway")?;
+    let logger = Logger::new(&resource, "market-data-gateway")?;
     let metrics = Metrics::new(&resource)?;
 
     let config = WorkerConfig::new(Environment::load()?)?;

@@ -93,10 +93,10 @@ impl Engine {
                     }
                 }
 
-                // The market data provider has emitted a new price update, evaluate price for trade action
+                // The market data gateway has emitted a new price update, evaluate price for trade action
                 price = self.price_receiver_channel.recv() => {
                     let Some(price) = price else {
-                        error!(client = %self.id, "Market data provider channel closed");
+                        error!(client = %self.id, "Market data gateway channel closed");
                         break;
                     };
 

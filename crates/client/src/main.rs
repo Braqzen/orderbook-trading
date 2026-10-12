@@ -17,12 +17,13 @@ async fn main() -> Result<()> {
     let logger = Logger::new(&resource, "client")?;
     let metrics = Metrics::new(&resource)?;
 
+    // TODO: create Environment and Configs similar to other crates
     let config_path = std::env::var("CONFIG_PATH")?;
-    let market_data_provider_url = std::env::var("MARKET_DATA_PROVIDER_URL")?;
+    let market_data_gateway_url = std::env::var("MARKET_DATA_GATEWAY_URL")?;
 
     let config = Config::new(config_path)?;
-    let market_data_provider_url = WsUrl::try_from(market_data_provider_url.as_str())?;
-    let worker = Worker::new(market_data_provider_url, config)?;
+    let market_data_gateway_url = WsUrl::try_from(market_data_gateway_url.as_str())?;
+    let worker = Worker::new(market_data_gateway_url, config)?;
 
     let result = worker.run().await;
 

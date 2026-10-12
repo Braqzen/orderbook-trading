@@ -1,5 +1,5 @@
 use crate::{
-    api::{ActiveOrderbooks, MarketDataProvider, MarketPrice, OrderBook, WsUrl},
+    api::{ActiveOrderbooks, MarketDataGateway, MarketPrice, OrderBook, WsUrl},
     config::Config,
     metrics::ClientMetrics,
     randomiser::Randomiser,
@@ -21,13 +21,13 @@ pub struct Worker {
     /// Orchestrates trade actions and accounting
     engine: Engine,
     /// Takes market price events and forwards to engine for processing
-    market_data_provider: MarketDataProvider,
+    market_data_gateway: MarketDataGateway,
     /// Takes trade actions from engine to send to book and forward responses back to engine
     orderbook: OrderBook,
 }
 
 impl Worker {
-    pub fn new(market_data_provider_url: WsUrl, config: Config) -> Result<Self> {
+    pub fn new(market_data_gateway_url: WsUrl, config: Config) -> Result<Self> {
         // Project spawns multiple clients with random state so use an ID for logs, metrics.
         let client_id = Uuid::new_v4();
         let metrics = ClientMetrics::new(client_id);
@@ -48,7 +48,7 @@ impl Worker {
         // Given new price events and client state decide on next trade action
         let trader = Trader::new(trade_limits, inventory, metrics.clone());
 
-        // Used to send price updates from the market data provider to the engine for evaluation
+        // Used to send price updates from the market data gateway to the engine for evaluation
         let (price_sender_channel, price_receiver_channel) = mpsc::channel::<MarketPrice>(128);
         // Used to send orders from engine to orderbook api
         let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
@@ -56,9 +56,9 @@ impl Worker {
         let (response_sender_channel, response_receiver_channel) = mpsc::channel(128);
 
         // First step of New Price Update Event -> Send to Engine for processing
-        let market_data_provider = MarketDataProvider::new(
+        let market_data_gateway = MarketDataGateway::new(
             client_id,
-            market_data_provider_url,
+            market_data_gateway_url,
             instruments.clone(),
             price_sender_channel,
             active_orderbooks.clone(),
@@ -86,7 +86,7 @@ impl Worker {
 
         Ok(Self {
             client_id,
-            market_data_provider,
+            market_data_gateway,
             orderbook,
             engine,
         })
@@ -99,7 +99,7 @@ impl Worker {
         let mut sigterm = signal(SignalKind::terminate())?;
 
         let token = CancellationToken::new();
-        let provider_token = token.child_token();
+        let gateway_token = token.child_token();
         let book_token = token.child_token();
         let engine_token = token.child_token();
 
@@ -107,7 +107,7 @@ impl Worker {
 
         tasks.spawn(self.engine.run(engine_token));
         tasks.spawn(self.orderbook.run(book_token));
-        tasks.spawn(self.market_data_provider.run(provider_token));
+        tasks.spawn(self.market_data_gateway.run(gateway_token));
 
         select! {
             Some(result) = tasks.join_next() => log_task_result(&self.client_id, result),

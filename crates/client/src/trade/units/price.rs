@@ -29,7 +29,7 @@ impl TryFrom<u64> for Price {
     }
 }
 
-/// Used for converting values sent by the market data provider
+/// Used for converting values sent by the market data gateway
 impl TryFrom<f64> for Price {
     type Error = String;
 

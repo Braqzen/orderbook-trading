@@ -1,18 +1,19 @@
 [package]
-name = "market-data-provider-gateway"
+name = "price-aggregator"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 eyre.workspace = true
-futures-util.workspace = true
 maiya.workspace = true
-opentelemetry.workspace = true
+prost.workspace = true
 redis = { workspace = true, features = ["connection-manager"] }
-serde.workspace = true
-serde_json.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
 tokio.workspace = true
-tokio-stream = { workspace = true, features = ["sync"] }
-tokio-tungstenite.workspace = true
+tokio-stream.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+
+[build-dependencies]
+tonic-prost-build.workspace = true

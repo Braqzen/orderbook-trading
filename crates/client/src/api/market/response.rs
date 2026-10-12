@@ -1,6 +1,6 @@
-//! Expected responses from the market data provider
+//! Expected responses from the market data gateway
 //!
-//! The provider may send a price update for a subscribed instrument, information about the state of a subscription request,
+//! The gateway may send a price update for a subscribed instrument, information about the state of a subscription request,
 //! or a fallback rejection if it could not handle the request for an unexpected reason.
 //!
 //! Currently, it does not include information about the fallback so client cannot attempt to recover.

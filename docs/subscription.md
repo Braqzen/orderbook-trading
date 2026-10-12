@@ -1,6 +1,6 @@
 # Subscriptions
 
-## Market data provider gateway
+## Market data gateway
 
 One WebSocket carries subscription changes and price updates.
 

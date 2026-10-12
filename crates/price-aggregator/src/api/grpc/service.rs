@@ -1,23 +1,21 @@
 //! Business logic handling receiving of gRPC events and setting values on an external cache (valkey)
 
-use crate::{
-    proto::PriceUpdate, proto::market_data_provider_server::MarketDataProvider, valkey::Cache,
-};
+use crate::{proto::PriceUpdate, proto::price_aggregator_server::PriceAggregator, valkey::Cache};
 use tonic::{Request, Response, Status, Streaming};
 use tracing::{error, info};
 
-pub struct MarketDataProviderService {
+pub struct PriceAggregatorService {
     cache: Cache,
 }
 
-impl MarketDataProviderService {
+impl PriceAggregatorService {
     pub fn new(cache: Cache) -> Self {
         Self { cache }
     }
 }
 
 #[tonic::async_trait]
-impl MarketDataProvider for MarketDataProviderService {
+impl PriceAggregator for PriceAggregatorService {
     async fn publish_price(
         &self,
         request: Request<Streaming<PriceUpdate>>,

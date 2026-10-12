@@ -17,7 +17,7 @@ The services are run in `docker-compose` via `just` commands but you may use doc
 
 ### Build Services
 
-This builds the price generator, market data provider, market data provider gateway, client and orderbook programmes.
+This builds the price generator, price aggregator, market data gateway, client and orderbook programmes.
 
 ```sh
 just build

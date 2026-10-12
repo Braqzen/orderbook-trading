@@ -4,7 +4,7 @@ use eyre::{Result, eyre};
 use redis::{AsyncCommands, Client, aio::ConnectionManager};
 
 /// An instrument price is stored at `{PRICE_CACHE_KEY}:{instrument}`.
-const PRICE_CACHE_KEY: &str = "market-data-provider";
+const PRICE_CACHE_KEY: &str = "price-aggregator";
 
 #[derive(Clone)]
 pub struct Cache {

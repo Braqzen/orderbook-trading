@@ -21,17 +21,17 @@ services:
     environment:
       RUST_LOG: info
       CONFIG_PATH: /app/config/price-generator.json
-      MARKET_DATA_PROVIDER_URL: http://market-data-provider:8000
+      PRICE_AGGREGATOR_URL: http://price-aggregator:8000
       <<: *common-env-telemetry
     depends_on:
       telemetry-alloy:
         condition: service_started
-      market-data-provider:
+      price-aggregator:
         condition: service_started
     restart: unless-stopped
 
-  market-data-provider:
-    image: orderbook-trading-market-data-provider:latest
+  price-aggregator:
+    image: orderbook-trading-price-aggregator:latest
     environment:
       RUST_LOG: info
       SOCKET: 0.0.0.0:8000
@@ -66,8 +66,8 @@ services:
       retries: 10
     restart: unless-stopped
 
-  market-data-provider-gateway:
-    image: orderbook-trading-market-data-provider-gateway:latest
+  market-data-gateway:
+    image: orderbook-trading-market-data-gateway:latest
     environment:
       RUST_LOG: info
       WS: 0.0.0.0:8001
@@ -85,12 +85,12 @@ services:
     environment:
       RUST_LOG: info
       CONFIG_PATH: /app/config/client.json
-      MARKET_DATA_PROVIDER_URL: ws://market-data-provider-gateway:8001
+      MARKET_DATA_GATEWAY_URL: ws://market-data-gateway:8001
       <<: *common-env-telemetry
     depends_on:
       telemetry-alloy:
         condition: service_started
-      market-data-provider-gateway:
+      market-data-gateway:
         condition: service_started
       orderbook-eth:
         condition: service_started

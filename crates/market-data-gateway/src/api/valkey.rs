@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 /// Valkey name of the price cache. An instrument price is stored at `{PRICE_CACHE_KEY}:{instrument}` and that instrument is published on this name.
-const PRICE_CACHE_KEY: &str = "market-data-provider";
+const PRICE_CACHE_KEY: &str = "price-aggregator";
 
 pub struct PriceReader {
     /// Valkey connection URL
@@ -47,7 +47,7 @@ impl PriceReader {
 
                 _ = token.cancelled() => break,
 
-                // Provider published an update to an instrument
+                // Aggregator published an update to an instrument
                 message = messages.next() => {
                     let Some(message) = message else {
                         return Err(std::io::Error::other("Valkey price subscription closed").into());

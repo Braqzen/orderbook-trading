@@ -2,7 +2,7 @@ mod market;
 mod orderbook;
 mod ws_url;
 
-pub use market::{MarketDataProvider, MarketPrice};
+pub use market::{MarketDataGateway, MarketPrice};
 pub use orderbook::{
     ActiveOrderbooks, Cancelled, OrderBook, OrderRejection, RequestMetadata, Response, Trade,
 };
