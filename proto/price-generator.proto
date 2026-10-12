@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package priceaggregator;
+package pricegenerator;
 
 import "google/protobuf/empty.proto";
 
-service PriceAggregator {
-  rpc PublishPrice (stream PriceUpdate) returns (google.protobuf.Empty);
+service PriceGenerator {
+  rpc SubscribePrices (google.protobuf.Empty) returns (stream PriceUpdate);
 }
 
 message PriceUpdate {

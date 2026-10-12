@@ -5,14 +5,14 @@ use crate::{
 };
 use eyre::Result;
 use std::time::Duration;
-use tokio::{select, sync::mpsc::Sender, time::sleep};
+use tokio::{select, sync::broadcast::Sender, time::sleep};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::info;
 
 pub struct Feed {
     /// Responsible for creating a new price value
     price_manager: PriceManager,
-    /// Channel used to send generated prices to the publisher
+    /// Channel used to send generated prices to connected aggregators
     price_sender_channel: Sender<PriceUpdate>,
     /// Value to sleep between generations to provide a consistent rhythm
     publish_interval: u64,
@@ -40,21 +40,17 @@ impl Feed {
         loop {
             let Price { instrument, value } = price_manager.next_price();
 
-            match self
-                .price_sender_channel
-                .send(PriceUpdate {
-                    instrument: instrument.to_string(),
-                    value,
-                })
-                .await
-            {
-                Ok(()) => {
+            match self.price_sender_channel.send(PriceUpdate {
+                instrument: instrument.to_string(),
+                value,
+            }) {
+                Ok(_) => {
                     self.metrics.record_sent_price(&instrument, value);
                     info!(%instrument, price = value, "Sent price");
                 }
-                Err(error) => {
-                    error!(%error, "Failed to send price");
-                    return Err(error.into());
+                Err(_) => {
+                    self.metrics.record_sent_price(&instrument, value);
+                    info!(%instrument, price = value, "Generated price with no subscribers");
                 }
             }
 

@@ -1,16 +1,16 @@
 use crate::{
+    api::GrpcServer,
     config::Config,
     proto::PriceUpdate,
-    publisher::Publisher,
     simulation::{Feed, PriceManager},
 };
 use eyre::Result;
 use rand::random_range;
-use std::time::Duration;
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 use tokio::{
     select,
     signal::unix::{SignalKind, signal},
-    sync::mpsc,
+    sync::broadcast,
     task::{JoinError, JoinSet},
     time::sleep,
 };
@@ -24,14 +24,14 @@ const PUBLISH_INTERVAL: u64 = 10;
 const SPAWN_JITTER_MS: u64 = 5;
 
 pub struct Worker {
-    /// Price Aggregator URL to send gRPC price updates to
-    price_aggregator_url: String,
+    /// Socket the generator serves price updates on. The aggregator connects as the client.
+    socket: SocketAddr,
     /// Math to create a new price per config constraints
     price_managers: Vec<PriceManager>,
 }
 
 impl Worker {
-    pub fn new(price_aggregator_url: String, config: Config) -> Result<Self> {
+    pub fn new(socket: String, config: Config) -> Result<Self> {
         let price_managers = config
             .feeds
             .iter()
@@ -43,7 +43,7 @@ impl Worker {
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
-            price_aggregator_url,
+            socket: SocketAddr::from_str(&socket)?,
             price_managers,
         })
     }
@@ -55,26 +55,29 @@ impl Worker {
         let mut sigterm = signal(SignalKind::terminate())?;
 
         let token = CancellationToken::new();
-        let (price_sender_channel, price_receiver_channel) = mpsc::channel::<PriceUpdate>(128);
         let mut tasks = JoinSet::new();
 
-        // Receive generated prices from each manager and send them to the price aggregator
-        let publisher_token = token.child_token();
-        let publisher = Publisher::new(self.price_aggregator_url, price_receiver_channel);
-        tasks.spawn(publisher.run(publisher_token));
+        // Each instrument feed sends prices through this channel
+        // When clients connect they receive a receiver channel handle to receive these updates
+        let (price_sender, _) = broadcast::channel::<PriceUpdate>(128);
+
+        // Serve generated prices to the aggregator over gRPC
+        let server_token = token.child_token();
+        let server = GrpcServer::new(self.socket, price_sender.clone());
+        tasks.spawn(server.run(server_token));
 
         // Spawn a feed per instrument with a slight delay to stagger updates
-        // Real event do not all arrive at the same time each tick
+        // Real events do not all arrive at the same time each tick
         for price_manager in self.price_managers.into_iter() {
             sleep(Duration::from_millis(random_range(0..SPAWN_JITTER_MS))).await;
 
             let feed_token = token.child_token();
-            let price_sender_channel = price_sender_channel.clone();
+            let price_sender_channel = price_sender.clone();
             let feed = Feed::new(price_manager, price_sender_channel, PUBLISH_INTERVAL);
             tasks.spawn(feed.run(feed_token));
         }
 
-        drop(price_sender_channel);
+        drop(price_sender);
 
         select! {
             Some(result) = tasks.join_next() => log_task_result(result),

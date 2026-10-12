@@ -2,7 +2,7 @@
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_prost_build::configure()
-        .build_server(false)
-        .compile_protos(&["../../proto/price-aggregator.proto"], &["../../proto"])?;
+        .build_client(false)
+        .compile_protos(&["../../proto/price-generator.proto"], &["../../proto"])?;
     Ok(())
 }

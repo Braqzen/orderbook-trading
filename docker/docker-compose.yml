@@ -21,12 +21,10 @@ services:
     environment:
       RUST_LOG: info
       CONFIG_PATH: /app/config/price-generator.json
-      PRICE_AGGREGATOR_URL: http://price-aggregator:8000
+      SOCKET: 0.0.0.0:8000
       <<: *common-env-telemetry
     depends_on:
       telemetry-alloy:
-        condition: service_started
-      price-aggregator:
         condition: service_started
     restart: unless-stopped
 
@@ -34,12 +32,14 @@ services:
     image: orderbook-trading-price-aggregator:latest
     environment:
       RUST_LOG: info
-      SOCKET: 0.0.0.0:8000
+      PRICE_GENERATOR_URL: http://price-generator:8000
       VALKEY_URL: redis://valkey:6379
       PRICE_TTL_SECONDS: "5"
       <<: *common-env-telemetry
     depends_on:
       telemetry-alloy:
+        condition: service_started
+      price-generator:
         condition: service_started
       valkey:
         condition: service_healthy
