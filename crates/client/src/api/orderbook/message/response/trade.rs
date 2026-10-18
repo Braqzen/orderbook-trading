@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 #[derive(Deserialize, Clone)]
 pub struct Trade {
+    pub exec_seq: u64,
     pub order_id: Uuid,
     pub side: OrderType,
     pub price: Price,

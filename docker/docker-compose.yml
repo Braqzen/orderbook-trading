@@ -5,7 +5,8 @@ x-common-env-telemetry: &common-env-telemetry
 
 x-orderbook-env: &orderbook-env
   RUST_LOG: info
-  WS: 0.0.0.0:8002
+  GRPC: 0.0.0.0:8003
+  REDPANDA_BROKERS: redpanda:9092
   <<: *common-env-telemetry
 
 x-orderbook: &orderbook
@@ -13,6 +14,18 @@ x-orderbook: &orderbook
   depends_on:
     telemetry-alloy:
       condition: service_started
+    redpanda-init:
+      condition: service_completed_successfully
+  restart: unless-stopped
+
+x-orderbook-gateway-env: &orderbook-gateway-env
+  RUST_LOG: info
+  WS: 0.0.0.0:8002
+  REDPANDA_BROKERS: redpanda:9092
+  <<: *common-env-telemetry
+
+x-orderbook-gateway: &orderbook-gateway
+  image: orderbook-trading-orderbook-gateway:latest
   restart: unless-stopped
 
 services:
@@ -86,23 +99,71 @@ services:
       RUST_LOG: info
       CONFIG_PATH: /app/config/client.json
       MARKET_DATA_GATEWAY_URL: ws://market-data-gateway:8001
+      VALKEY_URL: redis://valkey:6379
       <<: *common-env-telemetry
     depends_on:
       telemetry-alloy:
         condition: service_started
       market-data-gateway:
         condition: service_started
-      orderbook-eth:
+      valkey:
+        condition: service_healthy
+      orderbook-gateway-eth:
         condition: service_started
-      orderbook-btc:
+      orderbook-gateway-btc:
         condition: service_started
-      orderbook-sol:
+      orderbook-gateway-sol:
         condition: service_started
-      orderbook-xmr:
+      orderbook-gateway-xmr:
         condition: service_started
-      orderbook-xrp:
+      orderbook-gateway-xrp:
         condition: service_started
     restart: unless-stopped
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.4
+    command:
+      - redpanda
+      - start
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+      - --rpc-addr
+      - redpanda:33145
+      - --advertise-rpc-addr
+      - redpanda:33145
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --default-log-level=info
+    ports:
+      - "19092:19092"
+    volumes:
+      - redpanda-data-volume:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    restart: unless-stopped
+
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.4
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      RPK_BROKERS: redpanda:9092
+      RPK_ADMIN_HOSTS: redpanda:9644
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        rpk cluster config set auto_create_topics_enabled false --no-confirm &&
+        rpk topic create execution-ETH-USD execution-BTC-USD execution-SOL-USD execution-XMR-USD execution-XRP-USD --partitions 4 --replicas 1 --if-not-exists
+    restart: "no"
 
   orderbook-eth:
     <<: *orderbook
@@ -133,6 +194,76 @@ services:
     environment:
       <<: *orderbook-env
       INSTRUMENT: "XRP-USD"
+
+  orderbook-gateway-eth:
+    <<: *orderbook-gateway
+    environment:
+      <<: *orderbook-gateway-env
+      INSTRUMENT: "ETH-USD"
+      ORDERBOOK_URL: http://orderbook-eth:8003
+    depends_on:
+      telemetry-alloy:
+        condition: service_started
+      redpanda:
+        condition: service_healthy
+      orderbook-eth:
+        condition: service_started
+
+  orderbook-gateway-btc:
+    <<: *orderbook-gateway
+    environment:
+      <<: *orderbook-gateway-env
+      INSTRUMENT: "BTC-USD"
+      ORDERBOOK_URL: http://orderbook-btc:8003
+    depends_on:
+      telemetry-alloy:
+        condition: service_started
+      redpanda:
+        condition: service_healthy
+      orderbook-btc:
+        condition: service_started
+
+  orderbook-gateway-sol:
+    <<: *orderbook-gateway
+    environment:
+      <<: *orderbook-gateway-env
+      INSTRUMENT: "SOL-USD"
+      ORDERBOOK_URL: http://orderbook-sol:8003
+    depends_on:
+      telemetry-alloy:
+        condition: service_started
+      redpanda:
+        condition: service_healthy
+      orderbook-sol:
+        condition: service_started
+
+  orderbook-gateway-xmr:
+    <<: *orderbook-gateway
+    environment:
+      <<: *orderbook-gateway-env
+      INSTRUMENT: "XMR-USD"
+      ORDERBOOK_URL: http://orderbook-xmr:8003
+    depends_on:
+      telemetry-alloy:
+        condition: service_started
+      redpanda:
+        condition: service_healthy
+      orderbook-xmr:
+        condition: service_started
+
+  orderbook-gateway-xrp:
+    <<: *orderbook-gateway
+    environment:
+      <<: *orderbook-gateway-env
+      INSTRUMENT: "XRP-USD"
+      ORDERBOOK_URL: http://orderbook-xrp:8003
+    depends_on:
+      telemetry-alloy:
+        condition: service_started
+      redpanda:
+        condition: service_healthy
+      orderbook-xrp:
+        condition: service_started
 
   telemetry-grafana:
     image: grafana/grafana:12.2
@@ -191,6 +322,7 @@ services:
 
 volumes:
   valkey-data-volume:
+  redpanda-data-volume:
   grafana-data-volume:
   loki-data-volume:
   prometheus-data-volume:

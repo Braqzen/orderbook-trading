@@ -4,11 +4,13 @@ use uuid::Uuid;
 
 #[derive(Serialize)]
 pub struct OrderAccepted {
+    pub exec_seq: u64,
     pub order_id: Uuid,
 }
 
 #[derive(Serialize)]
 pub struct OrderRejection {
+    pub exec_seq: u64,
     pub order_id: Uuid,
     pub instrument: Instrument,
     pub price: Price,
@@ -25,6 +27,7 @@ impl OrderRejection {
         reason: RejectionReason,
     ) -> Self {
         Self {
+            exec_seq: 0,
             order_id: order.order_id,
             instrument,
             price,

@@ -1,14 +1,18 @@
 mod api;
 mod config;
+mod environment;
 mod metrics;
 mod randomiser;
 mod trade;
+mod valkey;
 mod worker;
 
 use api::WsUrl;
 use config::Config;
+use environment::Environment;
 use eyre::{Result, eyre};
 use maiya::{Resource, logs::Logger, metrics::Metrics};
+use valkey::SequenceCache;
 use worker::Worker;
 
 #[tokio::main]
@@ -18,12 +22,11 @@ async fn main() -> Result<()> {
     let metrics = Metrics::new(&resource)?;
 
     // TODO: create Environment and Configs similar to other crates
-    let config_path = std::env::var("CONFIG_PATH")?;
-    let market_data_gateway_url = std::env::var("MARKET_DATA_GATEWAY_URL")?;
-
-    let config = Config::new(config_path)?;
-    let market_data_gateway_url = WsUrl::try_from(market_data_gateway_url.as_str())?;
-    let worker = Worker::new(market_data_gateway_url, config)?;
+    let environment = Environment::load()?;
+    let config = Config::new(environment.config_path)?;
+    let market_data_gateway_url = WsUrl::try_from(environment.market_data_gateway_url.as_str())?;
+    let sequences = SequenceCache::connect(&environment.valkey_url).await?;
+    let worker = Worker::new(market_data_gateway_url, config, sequences)?;
 
     let result = worker.run().await;
 

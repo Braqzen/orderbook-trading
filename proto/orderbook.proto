@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package orderbook;
+
+import "google/protobuf/empty.proto";
+
+service Orderbook {
+  rpc Submit (SubmitRequest) returns (google.protobuf.Empty);
+}
+
+message SubmitRequest {
+  string client_id = 1;
+  oneof action {
+    Place place = 2;
+    Cancel cancel = 3;
+  }
+}
+
+message Place {
+  string instrument = 1;
+  uint64 price = 2;
+  uint64 size = 3;
+  Side side = 4;
+  string order_id = 5;
+}
+
+message Cancel {
+  string order_id = 1;
+  uint64 price = 2;
+  Side side = 3;
+}
+
+enum Side {
+  SIDE_UNSPECIFIED = 0;
+  BUY = 1;
+  SELL = 2;
+}

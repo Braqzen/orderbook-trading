@@ -1,14 +1,16 @@
 //! Creates and runs the order book system for one instrument.
-//! It owns the websocket server and engine, keeping both running until shutdown.
+//! It owns the gRPC server, engine, and execution publisher, keeping them running until shutdown.
 
 use crate::{
-    api::{SessionStore, WsServer},
+    api::GrpcServer,
     engine::Engine,
+    environment::Environment,
+    execution::Publisher,
     metrics::OrderbookMetrics,
     trade::Instrument,
 };
 use eyre::Result;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, str::FromStr};
 use tokio::{
     select,
     signal::unix::{SignalKind, signal},
@@ -23,33 +25,34 @@ use tracing::{error, info};
 //       their connections will be killed.
 /// Number of orders to buffer across all users
 const GLOBAL_ORDER_QUEUE: usize = 8192;
+/// Number of executions waiting to be written to Redpanda
+const PUBLISH_QUEUE: usize = 8192;
 
 pub struct Worker {
     /// The only instrument this orderbook processes
     instrument: Instrument,
-    /// Handles websocket connections from clients
-    server: WsServer,
+    /// Accepts order submissions from the gateway
+    server: GrpcServer,
     /// Core system handling user requests
     engine: Engine,
+    /// Writes executions to Redpanda
+    publisher: Publisher,
 }
 
 impl Worker {
-    pub fn new(ws: SocketAddr, instrument: String) -> Result<Self> {
-        let instrument = Instrument::try_from(instrument.as_str())?;
+    pub fn new(environment: Environment) -> Result<Self> {
+        let instrument = Instrument::try_from(environment.instrument.as_str())?;
+        let grpc = SocketAddr::from_str(&environment.grpc)?;
         let (order_sender, order_receiver) = mpsc::channel(GLOBAL_ORDER_QUEUE);
-        let sessions = SessionStore::new();
+        let (execution_sender, execution_receiver) = mpsc::channel(PUBLISH_QUEUE);
         let metrics = OrderbookMetrics::new(&instrument);
+        let producer = Publisher::producer(&environment.redpanda_brokers)?;
 
         Ok(Self {
             instrument: instrument.clone(),
-            server: WsServer::new(
-                ws,
-                instrument.clone(),
-                order_sender,
-                sessions.clone(),
-                metrics.clone(),
-            ),
-            engine: Engine::new(instrument, order_receiver, sessions, metrics),
+            server: GrpcServer::new(grpc, instrument.clone(), order_sender, metrics.clone()),
+            engine: Engine::new(instrument.clone(), order_receiver, execution_sender, metrics),
+            publisher: Publisher::new(instrument, producer, execution_receiver),
         })
     }
 
@@ -61,17 +64,19 @@ impl Worker {
 
         // Tokens are used to cancel all tasks
         let token = CancellationToken::new();
-        let ws_token = token.child_token();
+        let grpc_token = token.child_token();
         let engine_token = token.child_token();
+        let publisher_token = token.child_token();
 
         let mut tasks = JoinSet::new();
 
-        tasks.spawn(self.server.run(ws_token));
+        tasks.spawn(self.server.run(grpc_token));
         tasks.spawn(self.engine.run(engine_token));
+        tasks.spawn(self.publisher.run(publisher_token));
 
         // If any task shuts down or a signal is received shut everything down
         select! {
-            Some(result) = tasks.join_next() => log_task_result(&self.instrument, result),
+            Some(result) = tasks.join_next() => Self::log_task_result(&self.instrument, result),
             _ = sigint.recv() => info!(instrument = %self.instrument, "Received interrupt signal"),
             _ = sigterm.recv() => info!(instrument = %self.instrument, "Received terminate signal"),
         }
@@ -79,17 +84,17 @@ impl Worker {
         token.cancel();
 
         while let Some(result) = tasks.join_next().await {
-            log_task_result(&self.instrument, result);
+            Self::log_task_result(&self.instrument, result);
         }
 
         Ok(())
     }
-}
 
-fn log_task_result(instrument: &Instrument, result: std::result::Result<Result<()>, JoinError>) {
-    match result {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => error!(%instrument, %error, "Service failed"),
-        Err(error) => error!(%instrument, %error, "Service task failed"),
+    fn log_task_result(instrument: &Instrument, result: std::result::Result<Result<()>, JoinError>) {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => error!(%instrument, %error, "Service failed"),
+            Err(error) => error!(%instrument, %error, "Service task failed"),
+        }
     }
 }

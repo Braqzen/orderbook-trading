@@ -111,7 +111,7 @@
         {
           "direction": "backward",
           "editorMode": "builder",
-          "expr": "{service_name=\"orderbook\"} | logfmt | detected_level = `warn`",
+          "expr": "{service_name=~\"orderbook|orderbook-gateway\"} | logfmt | detected_level = `warn`",
           "queryType": "range",
           "refId": "A"
         }
@@ -397,7 +397,7 @@
         {
           "direction": "backward",
           "editorMode": "builder",
-          "expr": "{service_name=\"orderbook\"} | logfmt | detected_level = `info`",
+          "expr": "{service_name=~\"orderbook|orderbook-gateway\"} | logfmt | detected_level = `info`",
           "queryType": "range",
           "refId": "A"
         }
@@ -610,7 +610,7 @@
         {
           "direction": "backward",
           "editorMode": "builder",
-          "expr": "{service_name=\"orderbook\"} | logfmt | detected_level = `warn`",
+          "expr": "{service_name=~\"orderbook|orderbook-gateway\"} | logfmt | detected_level = `warn`",
           "queryType": "range",
           "refId": "A"
         }

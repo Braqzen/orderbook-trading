@@ -1,8 +1,6 @@
-mod request;
 mod response;
 
-pub use request::{ClientMessage, LoginRequest, RawMessage};
 pub use response::{
-    CancelRejection, CancelRejectionReason, Cancelled, LoginRejectionReason, OrderAccepted,
+    CancelRejection, CancelRejectionReason, Cancelled, OrderAccepted,
     OrderRejection, Response, Trade,
 };

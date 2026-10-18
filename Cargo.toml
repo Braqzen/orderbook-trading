@@ -5,7 +5,8 @@ members = [
     "crates/price-generator",
     "crates/price-aggregator",
     "crates/orderbook", 
-    "crates/market-data-gateway",
+    "crates/market-data-gateway", 
+    "crates/orderbook-gateway",
 ]
 
 [workspace.dependencies]
@@ -16,6 +17,7 @@ opentelemetry = "0.32.0"
 prost = "0.14.4"
 rand = "0.10.1"
 redis = { version = "1.7.1", features = ["tokio-comp", "streams"] }
+rdkafka = "0.39.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.151"
 tonic = "0.14.6"

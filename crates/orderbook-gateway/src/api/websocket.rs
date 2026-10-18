@@ -3,15 +3,16 @@
 
 use crate::{
     api::{SessionStore, connection::Connection},
-    metrics::OrderbookMetrics,
-    trade::{Instrument, Request},
+    execution::ExecutionReader,
+    metrics::GatewayMetrics,
+    submit::Submitter,
+    trade::Instrument,
 };
 use eyre::Result;
 use std::net::SocketAddr;
 use tokio::{
     net::TcpListener,
     select,
-    sync::mpsc::Sender,
     task::{JoinError, JoinSet},
 };
 use tokio_util::sync::CancellationToken;
@@ -22,25 +23,30 @@ pub struct WsServer {
     socket: SocketAddr,
     /// Used for logging
     instrument: Instrument,
-    /// Send order requests from a client to the trading engine
-    order_sender_channel: Sender<Request>,
+    /// Send order requests from a client to the orderbook
+    submitter: Submitter,
+    /// Redpanda brokers executions are read from
+    brokers: String,
     /// Track which clients are currently connected so we can stream their trades to them
     sessions: SessionStore,
-    metrics: OrderbookMetrics,
+    metrics: GatewayMetrics,
 }
 
 impl WsServer {
     pub fn new(
         socket: SocketAddr,
         instrument: Instrument,
-        order_sender_channel: Sender<Request>,
-        sessions: SessionStore,
-        metrics: OrderbookMetrics,
+        submitter: Submitter,
+        brokers: String,
     ) -> Self {
+        let metrics = GatewayMetrics::new(&instrument);
+        let sessions = SessionStore::new();
+
         Self {
             socket,
             instrument,
-            order_sender_channel,
+            submitter,
+            brokers,
             sessions,
             metrics,
         }
@@ -68,7 +74,8 @@ impl WsServer {
                         Connection::new(
                             stream,
                             self.instrument.clone(),
-                            self.order_sender_channel.clone(),
+                            self.submitter.clone(),
+                            ExecutionReader::new(self.brokers.clone(), self.instrument.clone()),
                             token.child_token(),
                             self.sessions.clone(),
                             self.metrics.clone(),
@@ -80,7 +87,7 @@ impl WsServer {
                 // Disconnected clients are (error) logged
                 connection_ended = connections.join_next(), if !connections.is_empty() => {
                     if let Some(result) = connection_ended {
-                        log_connection_result(&self.instrument, result);
+                        Self::log_connection_result(&self.instrument, result);
                     }
                 }
             }
@@ -89,20 +96,20 @@ impl WsServer {
         token.cancel();
 
         while let Some(result) = connections.join_next().await {
-            log_connection_result(&self.instrument, result);
+            Self::log_connection_result(&self.instrument, result);
         }
 
         Ok(())
     }
-}
 
-fn log_connection_result(
-    instrument: &Instrument,
-    result: std::result::Result<Result<()>, JoinError>,
-) {
-    match result {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => error!(%instrument, %error, "WebSocket connection failed"),
-        Err(error) => error!(%instrument, %error, "WebSocket connection task failed"),
+    fn log_connection_result(
+        instrument: &Instrument,
+        result: std::result::Result<Result<()>, JoinError>,
+    ) {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => error!(%instrument, %error, "WebSocket connection failed"),
+            Err(error) => error!(%instrument, %error, "WebSocket connection task failed"),
+        }
     }
 }

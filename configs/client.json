@@ -1,10 +1,10 @@
 {
   "instrument": {
-    "ETH-USD": "ws://orderbook-eth:8002",
-    "BTC-USD": "ws://orderbook-btc:8002",
-    "SOL-USD": "ws://orderbook-sol:8002",
-    "XMR-USD": "ws://orderbook-xmr:8002",
-    "XRP-USD": "ws://orderbook-xrp:8002"
+    "ETH-USD": "ws://orderbook-gateway-eth:8002",
+    "BTC-USD": "ws://orderbook-gateway-btc:8002",
+    "SOL-USD": "ws://orderbook-gateway-sol:8002",
+    "XMR-USD": "ws://orderbook-gateway-xmr:8002",
+    "XRP-USD": "ws://orderbook-gateway-xrp:8002"
   },
   "inventory": [
     {

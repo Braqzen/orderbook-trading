@@ -4,15 +4,12 @@ use opentelemetry::{
     metrics::{Counter, Gauge, UpDownCounter},
 };
 use std::collections::HashSet;
-use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct OrderbookMetrics {
     /// Instrument id attached to every metric attribute set.
     instrument: String,
-    /// Active WebSocket clients for this instrument.
-    connected_clients: UpDownCounter<i64>,
-    /// Pending orders in client or global processing queues.
+    /// Pending orders in the global processing queue.
     queue_size: UpDownCounter<i64>,
     /// Open order count at each price level (side, price labels).
     level_orders: Gauge<u64>,
@@ -37,9 +34,6 @@ impl OrderbookMetrics {
 
         Self {
             instrument: instrument.to_string(),
-            connected_clients: meter
-                .i64_up_down_counter("orderbook.clients.connected")
-                .build(),
             queue_size: meter.i64_up_down_counter("orderbook.queue.size").build(),
             level_orders: meter.u64_gauge("orderbook.level.orders").build(),
             level_quantity: meter.f64_gauge("orderbook.level.quantity").build(),
@@ -49,54 +43,6 @@ impl OrderbookMetrics {
             trade_size: meter.f64_counter("orderbook.trade.size_total").build(),
             recorded_levels: HashSet::new(),
         }
-    }
-
-    pub fn client_connected(&self) {
-        self.connected_clients
-            .add(1, &[KeyValue::new("instrument", self.instrument.clone())]);
-    }
-
-    pub fn client_disconnected(&self) {
-        self.connected_clients
-            .add(-1, &[KeyValue::new("instrument", self.instrument.clone())]);
-    }
-
-    pub fn client_order_enqueued(&self, client_id: Uuid) {
-        self.queue_size.add(
-            1,
-            &[
-                KeyValue::new("instrument", self.instrument.clone()),
-                KeyValue::new("queue", "client"),
-                KeyValue::new("client", client_id.to_string()),
-            ],
-        );
-    }
-
-    pub fn client_order_dequeued(&self, client_id: Uuid) {
-        self.queue_size.add(
-            -1,
-            &[
-                KeyValue::new("instrument", self.instrument.clone()),
-                KeyValue::new("queue", "client"),
-                KeyValue::new("client", client_id.to_string()),
-            ],
-        );
-    }
-
-    pub fn client_orders_dropped(&self, client_id: Uuid, count: usize) {
-        let count = match i64::try_from(count) {
-            Ok(count) => count,
-            Err(_) => i64::MAX,
-        };
-
-        self.queue_size.add(
-            -count,
-            &[
-                KeyValue::new("instrument", self.instrument.clone()),
-                KeyValue::new("queue", "client"),
-                KeyValue::new("client", client_id.to_string()),
-            ],
-        );
     }
 
     pub fn global_order_enqueued(&self) {
