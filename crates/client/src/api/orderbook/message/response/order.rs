@@ -4,11 +4,13 @@ use uuid::Uuid;
 
 #[derive(Deserialize, Clone)]
 pub struct OrderAccepted {
+    pub exec_seq: u64,
     pub order_id: Uuid,
 }
 
 #[derive(Deserialize)]
 pub struct OrderRejection {
+    pub exec_seq: u64,
     pub order_id: Uuid,
     pub instrument: Instrument,
     pub price: Price,

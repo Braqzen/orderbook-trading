@@ -1,6 +1,6 @@
-default: build-price-generator build-price-aggregator build-market-data-gateway build-client build-orderbook
+default: build-price-generator build-price-aggregator build-market-data-gateway build-client build-orderbook build-orderbook-gateway
 
-build: build-price-generator build-price-aggregator build-market-data-gateway build-client build-orderbook
+build: build-price-generator build-price-aggregator build-market-data-gateway build-client build-orderbook build-orderbook-gateway
 
 # Rust
 build-price-generator:
@@ -17,6 +17,9 @@ build-client:
 
 build-orderbook:
 	docker build -f docker/Dockerfile.orderbook -t orderbook-trading-orderbook:latest .
+
+build-orderbook-gateway:
+	docker build -f docker/Dockerfile.orderbook-gateway -t orderbook-trading-orderbook-gateway:latest .
 
 # Docker Compose Commands
 start clients="10":

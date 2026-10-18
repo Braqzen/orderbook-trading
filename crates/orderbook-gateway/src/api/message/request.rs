@@ -15,7 +15,10 @@ pub enum ClientMessage {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LoginRequest {
+    /// Client that is logging in
     pub client_id: Uuid,
+    /// Sequence number indicating where to start reading trades from
+    pub last_exec_seq: u64,
 }
 
 // TODO: need better name

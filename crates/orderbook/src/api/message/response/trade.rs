@@ -5,6 +5,7 @@ use uuid::Uuid;
 /// Wire type storing information about a trade
 #[derive(Serialize)]
 pub struct Trade {
+    pub exec_seq: u64,
     pub order_id: Uuid,
     pub side: OrderType,
     pub price: Price,
@@ -15,6 +16,7 @@ pub struct Trade {
 impl Trade {
     pub fn new(price: Price, fill: &Fill) -> Self {
         Self {
+            exec_seq: 0,
             order_id: fill.order_id,
             side: fill.side,
             price,

@@ -10,6 +10,7 @@ Information:
 - [End-to-end sequence diagrams](./docs/sequence.md): Example use cases from price generation to trading
 - [Client & Orderbook decisions](./docs/decision.md): How services perform decisions based on events
 - [Instrument Subscriptions](./docs/subscription.md): Client-Gateway instrument subscription handling
+- [Execution delivery](./docs/execution.md): Queue, scan, and replay limits between the orderbook gateway and the client
 
 ## Usage
 
@@ -17,7 +18,7 @@ The services are run in `docker-compose` via `just` commands but you may use doc
 
 ### Build Services
 
-This builds the price generator, price aggregator, market data gateway, client and orderbook programmes.
+This builds the price generator, price aggregator, market data gateway, client, orderbook, and orderbook gateway programmes.
 
 ```sh
 just build
@@ -27,7 +28,7 @@ To build a specific service check the [justfile](./justfile).
 
 ### Start Services
 
-The default starts with 10 clients and 5 orderbooks (1 for each instrument).
+The default starts with 10 clients, 5 orderbook gateways, and 5 orderbooks (1 gateway and 1 orderbook for each instrument).
 
 ```sh
 just start

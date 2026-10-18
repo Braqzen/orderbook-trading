@@ -4,10 +4,11 @@
 
 use crate::{
     api::{
-        Response, WsUrl,
+        ExecutionReport, Response, WsUrl,
         orderbook::{ActiveOrderbooks, LoginRequest, LoginResponse, Request},
     },
     trade::Instrument,
+    valkey::SequenceCache,
 };
 use eyre::{Result, eyre};
 use futures_util::{SinkExt, StreamExt};
@@ -36,7 +37,9 @@ pub struct Connection {
     /// Connect to the orderbook via websocket
     url: WsUrl,
     /// Receives orderbook responses and send back to engine
-    response_sender_channel: Sender<Response>,
+    response_sender_channel: Sender<ExecutionReport>,
+    /// Reads and stores this client's execution sequence
+    sequences: SequenceCache,
     /// Routes orders to logged-in orderbook connections
     active_orderbooks: ActiveOrderbooks,
     /// Cancels this connection
@@ -48,7 +51,8 @@ impl Connection {
         client_id: Uuid,
         instrument: Instrument,
         url: WsUrl,
-        response_sender_channel: Sender<Response>,
+        response_sender_channel: Sender<ExecutionReport>,
+        sequences: SequenceCache,
         active_orderbooks: ActiveOrderbooks,
         token: CancellationToken,
     ) -> Self {
@@ -57,6 +61,7 @@ impl Connection {
             instrument,
             url,
             response_sender_channel,
+            sequences,
             active_orderbooks,
             token,
         }
@@ -73,7 +78,19 @@ impl Connection {
         );
 
         // TODO: messy before&after login handling, clean up in proper issue
-        if let Err(error) = login(&mut stream, self.client_id, &self.instrument, &self.token).await
+        let last_exec_seq = self
+            .sequences
+            .last_exec_seq(self.client_id, &self.instrument)
+            .await?;
+
+        if let Err(error) = login(
+            &mut stream,
+            self.client_id,
+            &self.instrument,
+            last_exec_seq,
+            &self.token,
+        )
+        .await
         {
             if let Err(error) = stream.close(None).await {
                 error!(client = %self.client_id, instrument = %self.instrument, %error, "Failed to close orderbook connection");
@@ -108,7 +125,10 @@ impl Connection {
                                 }
                             };
 
-                            match self.response_sender_channel.try_send(response) {
+                            match self.response_sender_channel.try_send(ExecutionReport {
+                                instrument: self.instrument.clone(),
+                                response,
+                            }) {
                                 Ok(()) => {}
                                 Err(TrySendError::Closed(_)) => {
                                     error!(client = %self.client_id, instrument = %self.instrument, "Engine response channel closed");
@@ -116,6 +136,7 @@ impl Connection {
                                 }
                                 Err(TrySendError::Full(_)) => {
                                     warn!(client = %self.client_id, instrument = %self.instrument, "Engine response queue full");
+                                    break;
                                 }
                             }
                         }
@@ -214,9 +235,10 @@ async fn login(
     stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
     client_id: Uuid,
     instrument: &Instrument,
+    last_exec_seq: u64,
     token: &CancellationToken,
 ) -> Result<()> {
-    let login = LoginRequest::new(client_id);
+    let login = LoginRequest::new(client_id, last_exec_seq);
     let payload = serde_json::to_string(&login).map_err(|error| eyre!(error))?;
     stream
         .send(Message::Text(payload.into()))

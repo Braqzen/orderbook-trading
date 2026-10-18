@@ -1,13 +1,19 @@
 mod api;
 mod engine;
+mod environment;
+mod execution;
 mod metrics;
 mod trade;
 mod worker;
 
+use environment::Environment;
 use eyre::{Result, eyre};
 use maiya::{Resource, logs::Logger, metrics::Metrics};
-use std::{net::SocketAddr, str::FromStr};
 use worker::Worker;
+
+pub mod proto {
+    tonic::include_proto!("orderbook");
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -15,11 +21,7 @@ async fn main() -> Result<()> {
     let logger = Logger::new(&resource, "orderbook")?;
     let metrics = Metrics::new(&resource)?;
 
-    let ws = std::env::var("WS")?;
-    let instrument = std::env::var("INSTRUMENT")?;
-
-    let ws = SocketAddr::from_str(&ws)?;
-    let worker = Worker::new(ws, instrument)?;
+    let worker = Worker::new(Environment::load()?)?;
 
     let result = worker.run().await;
 

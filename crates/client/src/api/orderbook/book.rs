@@ -6,10 +6,11 @@
 
 use crate::{
     api::{
-        Response, WsUrl,
+        ExecutionReport, WsUrl,
         orderbook::{ActiveOrderbooks, RequestMetadata, connection::Connection},
     },
     trade::Instrument,
+    valkey::SequenceCache,
 };
 use eyre::{Result, ensure, eyre};
 use std::collections::HashMap;
@@ -30,7 +31,9 @@ pub struct OrderBook {
     /// Requests received from the engine to send to an orderbook
     order_receiver_channel: Receiver<RequestMetadata>,
     /// Receive responses from an orderbook and forward to engine
-    response_sender_channel: Sender<Response>,
+    response_sender_channel: Sender<ExecutionReport>,
+    /// Reads the execution sequence before each instrument login
+    sequences: SequenceCache,
     /// Routes orders to logged-in orderbook connections
     active_orderbooks: ActiveOrderbooks,
 }
@@ -41,7 +44,8 @@ impl OrderBook {
         subscriptions: Vec<Instrument>,
         instruments: HashMap<Instrument, WsUrl>,
         order_receiver_channel: Receiver<RequestMetadata>,
-        response_sender_channel: Sender<Response>,
+        response_sender_channel: Sender<ExecutionReport>,
+        sequences: SequenceCache,
         active_orderbooks: ActiveOrderbooks,
     ) -> Result<Self> {
         let mut resolved = Vec::with_capacity(subscriptions.len());
@@ -63,6 +67,7 @@ impl OrderBook {
             subscriptions: resolved,
             order_receiver_channel,
             response_sender_channel,
+            sequences,
             active_orderbooks,
         })
     }
@@ -79,6 +84,7 @@ impl OrderBook {
                 instrument,
                 url,
                 self.response_sender_channel.clone(),
+                self.sequences.clone(),
                 self.active_orderbooks.clone(),
                 token.child_token(),
             );

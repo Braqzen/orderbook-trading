@@ -4,6 +4,7 @@ mod ws_url;
 
 pub use market::{MarketDataGateway, MarketPrice};
 pub use orderbook::{
-    ActiveOrderbooks, Cancelled, OrderBook, OrderRejection, RequestMetadata, Response, Trade,
+    ActiveOrderbooks, Cancelled, ExecutionReport, OrderBook, OrderRejection, RequestMetadata,
+    Response, Trade,
 };
 pub use ws_url::WsUrl;

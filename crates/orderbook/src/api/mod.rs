@@ -1,11 +1,8 @@
-mod connection;
+mod grpc;
 mod message;
-mod session;
-mod websocket;
 
 pub use message::{
-    CancelRejection, CancelRejectionReason, Cancelled, ClientMessage, LoginRejectionReason,
-    LoginRequest, OrderAccepted, OrderRejection, RawMessage, Response, Trade,
+    CancelRejection, CancelRejectionReason, Cancelled, OrderAccepted, OrderRejection, Response,
+    Trade,
 };
-pub use session::SessionStore;
-pub use websocket::WsServer;
+pub use grpc::GrpcServer;

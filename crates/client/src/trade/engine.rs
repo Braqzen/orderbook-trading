@@ -1,11 +1,13 @@
 //! Uses the [`Trader`] to handle trading based on price updates and orderbook responses
 
 use crate::{
-    api::{ActiveOrderbooks, MarketPrice, RequestMetadata, Response},
+    api::{ActiveOrderbooks, ExecutionReport, MarketPrice, RequestMetadata, Response},
     metrics::ClientMetrics,
-    trade::{TradeAction, Trader},
+    trade::{Instrument, TradeAction, Trader},
+    valkey::SequenceCache,
 };
 use eyre::Result;
+use std::collections::HashMap;
 use tokio::{
     select,
     sync::mpsc::{Receiver, Sender},
@@ -24,9 +26,13 @@ pub struct Engine {
     /// Forward orders to the next stage which sends them to the orderbook
     order_sender_channel: Sender<RequestMetadata>,
     /// Await responses from the orderbook
-    response_receiver_channel: Receiver<Response>,
+    response_receiver_channel: Receiver<ExecutionReport>,
     /// Tracks metrics
     metrics: ClientMetrics,
+    /// Stores the last applied execution sequence
+    sequences: SequenceCache,
+    /// Last applied execution sequence for each instrument
+    cursors: HashMap<Instrument, u64>,
     /// Routes orders to logged-in orderbook connections
     active_orderbooks: ActiveOrderbooks,
 }
@@ -37,8 +43,9 @@ impl Engine {
         trader: Trader,
         price_receiver_channel: Receiver<MarketPrice>,
         order_sender_channel: Sender<RequestMetadata>,
-        response_receiver_channel: Receiver<Response>,
+        response_receiver_channel: Receiver<ExecutionReport>,
         metrics: ClientMetrics,
+        sequences: SequenceCache,
         active_orderbooks: ActiveOrderbooks,
     ) -> Self {
         Self {
@@ -48,6 +55,8 @@ impl Engine {
             order_sender_channel,
             response_receiver_channel,
             metrics,
+            sequences,
+            cursors: HashMap::new(),
             active_orderbooks,
         }
     }
@@ -63,13 +72,20 @@ impl Engine {
 
                 // Process the response of the orderbook service
                 response = self.response_receiver_channel.recv() => {
-                    let Some(response) = response else {
+                    let Some(report) = response else {
                         error!(client = %self.id, "Orderbook response channel closed");
                         break;
                     };
 
+                    if self.already_applied(&report).await {
+                        continue;
+                    }
+
+                    let exec_seq = report.response.exec_seq();
+                    let instrument = report.instrument.clone();
+
                     // TODO: split accepted into untraded but in book and partially unfilled rest remains in book
-                    match response {
+                    match report.response {
                         Response::Trade(trade) => {
                             self.metrics.record_orderbook_response("trade");
                             self.trader.apply_trade(self.id, trade);
@@ -91,6 +107,8 @@ impl Engine {
                             warn!(client = %self.id, order = %rejection.order_id, ?rejection.reason, "Cancel rejection received");
                         }
                     }
+
+                    self.store_sequence(&instrument, exec_seq).await;
                 }
 
                 // The market data gateway has emitted a new price update, evaluate price for trade action
@@ -162,5 +180,45 @@ impl Engine {
         }
 
         Ok(())
+    }
+
+    // Execution 5 before 4 advances the cursor and drops 4, desyncing the client from the log.
+    // This demo avoids that: one client key is written in order on one partition.
+    // Production would request 4 before applying 5.
+    async fn already_applied(&mut self, report: &ExecutionReport) -> bool {
+        let exec_seq = report.response.exec_seq();
+        if exec_seq == 0 {
+            return false;
+        }
+
+        match self.cursor(&report.instrument).await {
+            Ok(cursor) => exec_seq <= cursor,
+            Err(error) => {
+                error!(client = %self.id, instrument = %report.instrument, %error, "Failed to read execution sequence");
+                true
+            }
+        }
+    }
+
+    async fn cursor(&mut self, instrument: &Instrument) -> Result<u64> {
+        if let Some(seq) = self.cursors.get(instrument) {
+            return Ok(*seq);
+        }
+
+        let seq = self.sequences.last_exec_seq(self.id, instrument).await?;
+        self.cursors.insert(instrument.clone(), seq);
+        Ok(seq)
+    }
+
+    async fn store_sequence(&mut self, instrument: &Instrument, exec_seq: u64) {
+        if exec_seq == 0 {
+            return;
+        }
+
+        if let Err(error) = self.sequences.store(self.id, instrument, exec_seq).await {
+            error!(client = %self.id, %instrument, %exec_seq, %error, "Failed to store execution sequence");
+        }
+
+        self.cursors.insert(instrument.clone(), exec_seq);
     }
 }

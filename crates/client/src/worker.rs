@@ -1,9 +1,10 @@
 use crate::{
-    api::{ActiveOrderbooks, MarketDataGateway, MarketPrice, OrderBook, WsUrl},
+    api::{ActiveOrderbooks, ExecutionReport, MarketDataGateway, MarketPrice, OrderBook, WsUrl},
     config::Config,
     metrics::ClientMetrics,
     randomiser::Randomiser,
     trade::{Engine, Trader},
+    valkey::SequenceCache,
 };
 use eyre::Result;
 use tokio::{
@@ -27,7 +28,11 @@ pub struct Worker {
 }
 
 impl Worker {
-    pub fn new(market_data_gateway_url: WsUrl, config: Config) -> Result<Self> {
+    pub fn new(
+        market_data_gateway_url: WsUrl,
+        config: Config,
+        sequences: SequenceCache,
+    ) -> Result<Self> {
         // Project spawns multiple clients with random state so use an ID for logs, metrics.
         let client_id = Uuid::new_v4();
         let metrics = ClientMetrics::new(client_id);
@@ -53,7 +58,8 @@ impl Worker {
         // Used to send orders from engine to orderbook api
         let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
         // Used to forward orderbook responses back to engine
-        let (response_sender_channel, response_receiver_channel) = mpsc::channel(128);
+        let (response_sender_channel, response_receiver_channel) =
+            mpsc::channel::<ExecutionReport>(128);
 
         // First step of New Price Update Event -> Send to Engine for processing
         let market_data_gateway = MarketDataGateway::new(
@@ -72,6 +78,7 @@ impl Worker {
             order_sender_channel,
             response_receiver_channel,
             metrics,
+            sequences.clone(),
             active_orderbooks.clone(),
         );
         // Lastly orderbook sends actions to orderbook service then forwards responses to engine
@@ -81,6 +88,7 @@ impl Worker {
             orderbook_urls,
             order_receiver_channel,
             response_sender_channel,
+            sequences,
             active_orderbooks,
         )?;
 

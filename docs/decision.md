@@ -10,21 +10,21 @@ flowchart TD
 
     Action -->|"50% of updates"| Nothing["Take no action"]
     Action -->|"40% of updates"| NewOrder["Create a buy or sell limit order<br/>at the latest price with a random<br/>quantity inside the configured limits"]
-    NewOrder --> Place["Request placement from that instrument's orderbook"]
+    NewOrder --> Place["Request placement from that instrument's orderbook gateway"]
 
     Action -->|"10% of updates"| OpenOrders{"Does the client have an open order?"}
     OpenOrders -->|"No"| Nothing
     OpenOrders -->|"Yes"| Select["Select one open order at random"]
-    Select --> Cancel["Request cancellation from that instrument's orderbook"]
+    Select --> Cancel["Request cancellation from that instrument's orderbook gateway"]
 ```
 
 ### Orderbook Service
 
-The orderbook sends an explicit response for every rejection, accepted remainder, trade, or cancellation result.
+The orderbook publishes an explicit execution for every rejection, accepted remainder, trade, or cancellation result. The gateway delivers those executions to the client, including executions that happened while the client was disconnected.
 
 ```mermaid
 flowchart TD
-    Request{"Request received from a trading client"}
+    Request{"Request received from an orderbook gateway"}
 
     Request -->|"Place a limit order"| Risk{"Does the order pass<br/>the risk policy?"}
     Risk -->|"No"| Rejected["Send Order Rejected<br/>to the requesting client"]
