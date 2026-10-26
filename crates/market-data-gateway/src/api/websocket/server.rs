@@ -6,6 +6,7 @@
 use crate::{
     api::{price::PriceChannels, websocket::connection::Connection},
     metrics::GatewayMetrics,
+    whitelist::InstrumentWhitelist,
 };
 use eyre::Result;
 use std::net::SocketAddr;
@@ -22,15 +23,23 @@ pub struct WsServer {
     socket: SocketAddr,
     /// Instrument-specific price channels
     prices: PriceChannels,
+    /// Instruments clients may subscribe to
+    instruments: InstrumentWhitelist,
     /// Tracks metrics
     metrics: GatewayMetrics,
 }
 
 impl WsServer {
-    pub fn new(socket: SocketAddr, prices: PriceChannels, metrics: GatewayMetrics) -> Self {
+    pub fn new(
+        socket: SocketAddr,
+        prices: PriceChannels,
+        instruments: InstrumentWhitelist,
+        metrics: GatewayMetrics,
+    ) -> Self {
         Self {
             socket,
             prices,
+            instruments,
             metrics,
         }
     }
@@ -65,6 +74,7 @@ impl WsServer {
                             stream,
                             client,
                             self.prices.clone(),
+                            self.instruments.clone(),
                             token.child_token(),
                             self.metrics.clone(),
                         )

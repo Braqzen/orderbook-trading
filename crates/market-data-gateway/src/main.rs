@@ -1,6 +1,7 @@
 mod api;
 mod environment;
 mod metrics;
+mod whitelist;
 mod worker;
 
 use environment::Environment;

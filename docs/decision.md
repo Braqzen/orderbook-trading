@@ -22,6 +22,8 @@ flowchart TD
 
 The orderbook publishes an explicit execution for every rejection, accepted remainder, trade, or cancellation result. The gateway delivers those executions to the client, including executions that happened while the client was disconnected.
 
+> Note: self-trading is not prevented, a client may place orders on both buy/sell sides and may match on their own orders.
+
 ```mermaid
 flowchart TD
     Request{"Request received from an orderbook gateway"}

@@ -38,8 +38,8 @@ impl PriceChannels {
     ///
     /// # SAFETY
     ///
-    /// Unbounded and unverified creation. Project does 0 checks to ensure incoming instrument is valid or
-    /// limit number of instruments which may lead to OOM in real systems
+    /// Unbounded creation. Project does 0 checks to limit number of instruments which may lead to OOM in real systems.
+    /// While the instrument whitelist is a limit, with many clients that may add up to OOM (not in this demo though)
     pub async fn subscribe(&self, instrument: &str) -> Receiver<PriceUpdate> {
         let mut channels = self.channels.write().await;
         channels

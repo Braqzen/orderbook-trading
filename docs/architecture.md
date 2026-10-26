@@ -23,6 +23,8 @@ When a client receives a price update it makes a decision if it should perform a
 
 Each orderbook handles 1 instrument and there is 1 `Orderbook Gateway` for each orderbook. Each client has a single `websocket` connection to that instrument's `Orderbook Gateway`. The gateway accepts requests after the client has completed a login sequence and forwards `place` and `cancel` requests to the orderbook through `gRPC`.
 
+Horizontally scaling `Orderbook Gateway`'s does not improve client load because there is a single orderbook per instrument that operates sequentially.
+
 The orderbook publishes every trade, acceptance, rejection, and cancellation to the execution log. The record is keyed by client ID and carries that client's next execution sequence. The gateway reads the log from the start, skips sequences the client has already applied, and keeps forwarding new records on the same websocket. The client stores its latest sequence in the price cache under a separate key prefix.
 
 There is no appropriate sequence replay mechanism therefore if a client receives sequence 5 before sequence 4 then once sequence 4 arrives it will be dropped, leading to a desync of the client and incorrect trading actions for future messages. However, sequences are written and sent in order so that should not occur in this sandbox.
