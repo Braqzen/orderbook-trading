@@ -6,7 +6,7 @@ One WebSocket carries subscription changes and price updates.
 
 ### Subscribe
 
-The client sends the instruments it wants prices for. An instrument already in that client's subscription is rejected and every other instrument is added. The client is informed about the result of all instruments.
+The client sends the instruments it wants prices for. The gateway checks its whitelist and rejects invalid instruments. An instrument already in that client's subscription is rejected. Every other named instrument is added. The client is informed about the result of all instruments.
 
 ```mermaid
 flowchart TD
@@ -15,11 +15,13 @@ flowchart TD
     Instruments -->|"No"| Generic["Send Rejected"]
     Instruments -->|"Yes"| Split["Split the instruments"]
 
-    Split --> New["Instruments not yet subscribed"]
-    Split --> Existing["Instruments already subscribed"]
+    Split --> New["On whitelist and<br/>not yet subscribed"]
+    Split --> Existing["Already subscribed"]
+    Split --> Denied["Not on gateway whitelist"]
 
     New --> Outcome{"Which instruments were added?"}
     Existing --> Outcome
+    Denied --> Outcome
 
     Outcome -->|"All of them"| Subscribed["Send Subscribed<br/>with those instruments"]
     Outcome -->|"Some of them"| Partial["Send Partially Subscribed<br/>with the added instruments<br/>and the rejected instruments"]

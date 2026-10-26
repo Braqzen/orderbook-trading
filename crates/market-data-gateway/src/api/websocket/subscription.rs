@@ -2,24 +2,33 @@
 //!
 //! # SAFETY
 //!
-//! There are no checks to validate what is or is not an instrument, client may add garbage atm
-//! The list is also unbounded and may OOM the gateway
+//! Clients may only subscribe to instruments listed in the gateway config. A second subscribe to the
+//! same instrument is rejected. There is no global cap on client count; many connections subscribing
+//! may still OOM the gateway.
 
-use crate::api::price::{PriceChannels, PriceUpdate};
-use crate::api::websocket::request::Operation;
+use crate::{
+    api::{
+        price::{PriceChannels, PriceUpdate},
+        websocket::request::Operation,
+    },
+    whitelist::InstrumentWhitelist,
+};
 use tokio_stream::{
     StreamExt, StreamMap,
     wrappers::{BroadcastStream, errors::BroadcastStreamRecvError},
 };
 
 pub struct Subscriptions {
+    /// Instruments a client may subscribe to
+    whitelist: InstrumentWhitelist,
     /// Instrument key to its channel price receiver
     streams: StreamMap<String, BroadcastStream<PriceUpdate>>,
 }
 
 impl Subscriptions {
-    pub fn new() -> Self {
+    pub fn new(whitelist: InstrumentWhitelist) -> Self {
         Self {
+            whitelist,
             streams: StreamMap::new(),
         }
     }
@@ -36,6 +45,11 @@ impl Subscriptions {
         match operation {
             Operation::Subscribe => {
                 for instrument in instruments {
+                    if !self.whitelist.contains(instrument) {
+                        rejected.push(instrument.clone());
+                        continue;
+                    }
+
                     if self.streams.contains_key(instrument) {
                         rejected.push(instrument.clone());
                         continue;

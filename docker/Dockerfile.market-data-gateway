@@ -25,4 +25,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/market-data-gateway /app/server
+COPY configs/instruments.json /app/config/instruments.json
 CMD ["/app/server"]

@@ -13,6 +13,7 @@ use crate::{
         },
     },
     metrics::GatewayMetrics,
+    whitelist::InstrumentWhitelist,
 };
 use eyre::Result;
 use futures_util::SinkExt;
@@ -30,6 +31,8 @@ pub struct Connection {
     client: SocketAddr,
     /// Instrument-specific price channels
     prices: PriceChannels,
+    /// Instruments clients may subscribe to
+    instruments: InstrumentWhitelist,
     /// Token to handle shutdown requests
     token: CancellationToken,
     /// Tracks metrics
@@ -41,6 +44,7 @@ impl Connection {
         stream: TcpStream,
         client: SocketAddr,
         prices: PriceChannels,
+        instruments: InstrumentWhitelist,
         token: CancellationToken,
         metrics: GatewayMetrics,
     ) -> Self {
@@ -50,6 +54,7 @@ impl Connection {
             prices,
             token,
             metrics,
+            instruments,
         }
     }
 
@@ -67,7 +72,7 @@ impl Connection {
 
         // Track which instruments/channel receivers the client has subscribed to
         // All handles are managed by this single type, query 1 type instead of multiple channels
-        let mut subscriptions = Subscriptions::new();
+        let mut subscriptions = Subscriptions::new(self.instruments);
 
         loop {
             select! {

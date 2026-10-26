@@ -10,6 +10,7 @@ use crate::{
     api::{PriceChannels, PriceReader, WsServer},
     environment::Environment,
     metrics::GatewayMetrics,
+    whitelist::InstrumentWhitelist,
 };
 use eyre::Result;
 use std::{net::SocketAddr, str::FromStr};
@@ -25,15 +26,19 @@ pub struct WorkerConfig {
     ws: SocketAddr,
     /// Address of the Valkey service the gateway connects to
     valkey_url: String,
+    /// Instruments clients may subscribe to
+    instruments: InstrumentWhitelist,
 }
 
 impl WorkerConfig {
     pub fn new(environment: Environment) -> Result<Self> {
         let ws = SocketAddr::from_str(&environment.ws)?;
+        let instruments = InstrumentWhitelist::new(&environment.instruments_config_path)?;
 
         Ok(Self {
             ws,
             valkey_url: environment.valkey_url,
+            instruments,
         })
     }
 }
@@ -58,7 +63,12 @@ impl Worker {
         let prices = PriceChannels::new();
 
         // 2 background tasks, reading and forwarding price updates from cache and websocket server for client management
-        let ws = WsServer::new(self.config.ws, prices.clone(), metrics);
+        let ws = WsServer::new(
+            self.config.ws,
+            prices.clone(),
+            self.config.instruments,
+            metrics,
+        );
         let reader = PriceReader::new(self.config.valkey_url, prices);
 
         let token = CancellationToken::new();
