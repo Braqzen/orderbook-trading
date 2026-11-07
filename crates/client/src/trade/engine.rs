@@ -1,16 +1,17 @@
 //! Uses the [`Trader`] to handle trading based on price updates and orderbook responses
 
 use crate::{
-    api::{ActiveOrderbooks, ExecutionReport, MarketPrice, RequestMetadata, Response},
+    api::{
+        ExecutionReport, MarketPrice, OrderBookRegistry, RequestMetadata, Response, SubmitOutcome,
+    },
     metrics::ClientMetrics,
-    trade::{Instrument, TradeAction, Trader},
+    trade::{TradeAction, Trader},
     valkey::SequenceCache,
 };
 use eyre::Result;
-use std::collections::HashMap;
 use tokio::{
     select,
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::{Receiver, error::TrySendError},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -23,18 +24,16 @@ pub struct Engine {
     trader: Trader,
     /// Receive price updates from the previous stage
     price_receiver_channel: Receiver<MarketPrice>,
-    /// Forward orders to the next stage which sends them to the orderbook
-    order_sender_channel: Sender<RequestMetadata>,
     /// Await responses from the orderbook
     response_receiver_channel: Receiver<ExecutionReport>,
+    /// Learns whether a place request reached the orderbook websocket
+    submit_outcome_receiver_channel: Receiver<SubmitOutcome>,
     /// Tracks metrics
     metrics: ClientMetrics,
     /// Stores the last applied execution sequence
     sequences: SequenceCache,
-    /// Last applied execution sequence for each instrument
-    cursors: HashMap<Instrument, u64>,
-    /// Routes orders to logged-in orderbook connections
-    active_orderbooks: ActiveOrderbooks,
+    /// Routes orders to logged-in orderbook tasks
+    orderbook_registry: OrderBookRegistry,
 }
 
 impl Engine {
@@ -42,22 +41,21 @@ impl Engine {
         id: Uuid,
         trader: Trader,
         price_receiver_channel: Receiver<MarketPrice>,
-        order_sender_channel: Sender<RequestMetadata>,
         response_receiver_channel: Receiver<ExecutionReport>,
+        submit_outcome_receiver_channel: Receiver<SubmitOutcome>,
         metrics: ClientMetrics,
         sequences: SequenceCache,
-        active_orderbooks: ActiveOrderbooks,
+        orderbook_registry: OrderBookRegistry,
     ) -> Self {
         Self {
             id,
             trader,
             price_receiver_channel,
-            order_sender_channel,
             response_receiver_channel,
+            submit_outcome_receiver_channel,
             metrics,
             sequences,
-            cursors: HashMap::new(),
-            active_orderbooks,
+            orderbook_registry,
         }
     }
 
@@ -69,6 +67,70 @@ impl Engine {
                 biased;
 
                 _ = token.cancelled() => break,
+
+                // The market data gateway has emitted a new price update, evaluate price for trade action
+                price = self.price_receiver_channel.recv() => {
+                    let Some(price) = price else {
+                        error!(client = %self.id, "Market data gateway channel closed");
+                        break;
+                    };
+
+                    if !self.orderbook_registry.connected(&price.instrument).await {
+                        continue;
+                    }
+
+                    match self.trader.select_action(price) {
+                        TradeAction::Skip => {}
+                        TradeAction::Place {
+                            instrument,
+                            price: value,
+                            size,
+                            side,
+                        } => {
+                            let Some(order) = self
+                                .trader
+                                .reserve(self.id, instrument.clone(), value, size, side)
+                            else {
+                                continue;
+                            };
+
+                            if !self.route_request(RequestMetadata::place(&order)).await {
+                                self.trader.rollback(&order);
+                            }
+                        }
+                        TradeAction::Cancel { order_id } => {
+                            let Some(order) = self.trader.opened_order(order_id) else {
+                                warn!(client = %self.id, order = %order_id, "Cancel requested for unknown order");
+                                continue;
+                            };
+
+                            info!(
+                                client = %self.id,
+                                order = %order_id,
+                                instrument = %order.instrument,
+                                price = %order.price,
+                                side = %order.side,
+                                "Sending cancel"
+                            );
+
+                            self.route_request(RequestMetadata::cancel(&order)).await;
+                        }
+                    }
+                }
+
+                // Handle whether we sent request through orderbook ws connection
+                outcome = self.submit_outcome_receiver_channel.recv() => {
+                    let Some(outcome) = outcome else {
+                        error!(client = %self.id, "Submit outcome channel closed");
+                        break;
+                    };
+
+                    if outcome.submitted {
+                        self.trader.commit(outcome.order);
+                    } else {
+                        self.trader.rollback(&outcome.order);
+                    }
+                }
 
                 // Process the response of the orderbook service
                 response = self.response_receiver_channel.recv() => {
@@ -108,72 +170,10 @@ impl Engine {
                         }
                     }
 
-                    self.store_sequence(&instrument, exec_seq).await;
-                }
-
-                // The market data gateway has emitted a new price update, evaluate price for trade action
-                price = self.price_receiver_channel.recv() => {
-                    let Some(price) = price else {
-                        error!(client = %self.id, "Market data gateway channel closed");
-                        break;
-                    };
-
-                    if !self
-                        .active_orderbooks
-                        .read()
-                        .await
-                        .contains_key(&price.instrument)
+                    if exec_seq != 0
+                        && let Err(error) = self.sequences.store(self.id, &instrument, exec_seq).await
                     {
-                        continue;
-                    }
-
-                    match self.trader.select_action(price) {
-                        TradeAction::Skip => {}
-                        TradeAction::Place {
-                            instrument,
-                            price: value,
-                            size,
-                            side,
-                        } => {
-                            let Some(order) = self
-                                .trader
-                                .prepare_place(self.id, instrument.clone(), value, size, side)
-                            else {
-                                continue;
-                            };
-
-                            let request = RequestMetadata::place(&order);
-
-                            if self.order_sender_channel.send(request).await.is_err() {
-                                self.trader.rollback_place(&order);
-                                error!(client = %self.id, "Order channel closed");
-                                break;
-                            }
-
-                            self.trader.confirm_place(order);
-                        }
-                        TradeAction::Cancel { order_id } => {
-                            let Some(order) = self.trader.opened_order(order_id) else {
-                                warn!(client = %self.id, order = %order_id, "Cancel requested for unknown order");
-                                continue;
-                            };
-
-                            info!(
-                                client = %self.id,
-                                order = %order_id,
-                                instrument = %order.instrument,
-                                price = %order.price,
-                                side = %order.side,
-                                "Sending cancel"
-                            );
-
-                            let request = RequestMetadata::cancel(&order);
-
-                            if self.order_sender_channel.send(request).await.is_err() {
-                                error!(client = %self.id, order = %order_id, "Order channel closed");
-                                break;
-                            }
-                        }
+                        error!(client = %self.id, %instrument, %exec_seq, %error, "Failed to store execution sequence");
                     }
                 }
             }
@@ -182,43 +182,51 @@ impl Engine {
         Ok(())
     }
 
+    /// Forward the request from the engine to 1 of the orderbook tasks (1 task per instrument)
+    async fn route_request(&mut self, request: RequestMetadata) -> bool {
+        let instrument = request.order.instrument.clone();
+        let Some(order_sender) = self.orderbook_registry.sender(&instrument).await else {
+            warn!(client = %self.id, %instrument, "No logged-in orderbook for instrument");
+            return false;
+        };
+
+        match order_sender.try_send(request) {
+            Ok(()) => true,
+            Err(TrySendError::Closed(_)) => {
+                self.orderbook_registry
+                    .remove(&instrument, &order_sender)
+                    .await;
+
+                error!(client = %self.id, %instrument, "Orderbook order channel closed");
+                false
+            }
+            Err(TrySendError::Full(_)) => {
+                warn!(client = %self.id, %instrument, "Orderbook order queue full");
+                false
+            }
+        }
+    }
+
     // Execution 5 before 4 advances the cursor and drops 4, desyncing the client from the log.
     // This demo avoids that: one client key is written in order on one partition.
     // Production would request 4 before applying 5.
     async fn already_applied(&mut self, report: &ExecutionReport) -> bool {
         let exec_seq = report.response.exec_seq();
+
         if exec_seq == 0 {
             return false;
         }
 
-        match self.cursor(&report.instrument).await {
-            Ok(cursor) => exec_seq <= cursor,
+        match self
+            .sequences
+            .last_exec_seq(self.id, &report.instrument)
+            .await
+        {
+            Ok(last_exec_seq) => exec_seq <= last_exec_seq,
             Err(error) => {
                 error!(client = %self.id, instrument = %report.instrument, %error, "Failed to read execution sequence");
                 true
             }
         }
-    }
-
-    async fn cursor(&mut self, instrument: &Instrument) -> Result<u64> {
-        if let Some(seq) = self.cursors.get(instrument) {
-            return Ok(*seq);
-        }
-
-        let seq = self.sequences.last_exec_seq(self.id, instrument).await?;
-        self.cursors.insert(instrument.clone(), seq);
-        Ok(seq)
-    }
-
-    async fn store_sequence(&mut self, instrument: &Instrument, exec_seq: u64) {
-        if exec_seq == 0 {
-            return;
-        }
-
-        if let Err(error) = self.sequences.store(self.id, instrument, exec_seq).await {
-            error!(client = %self.id, %instrument, %exec_seq, %error, "Failed to store execution sequence");
-        }
-
-        self.cursors.insert(instrument.clone(), exec_seq);
     }
 }
