@@ -1,30 +1,31 @@
-//! Routes a [`Request`] to the orderbook connection for an instrument.
-//!
-//! This wrapper stays inside the client, and [`Request`] gets sent to the orderbook service.
+//! Routes an order action to the orderbook connection for an instrument.
 
-use crate::{
-    api::orderbook::message::request::Request,
-    trade::{Instrument, Order},
-};
+use crate::trade::Order;
+
+#[derive(Clone, Copy)]
+pub enum RequestKind {
+    Place,
+    Cancel,
+}
 
 #[derive(Clone)]
 pub struct RequestMetadata {
-    pub instrument: Instrument,
-    pub message: Request,
+    pub order: Order,
+    pub kind: RequestKind,
 }
 
 impl RequestMetadata {
     pub fn place(order: &Order) -> Self {
         Self {
-            instrument: order.instrument.clone(),
-            message: Request::place(order.clone()),
+            order: order.clone(),
+            kind: RequestKind::Place,
         }
     }
 
     pub fn cancel(order: &Order) -> Self {
         Self {
-            instrument: order.instrument.clone(),
-            message: Request::cancel(order.order_id, order.price, order.side),
+            order: order.clone(),
+            kind: RequestKind::Cancel,
         }
     }
 }

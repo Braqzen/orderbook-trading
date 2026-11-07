@@ -6,7 +6,7 @@ mod login;
 mod metadata;
 
 pub use login::LoginRequest;
-pub use metadata::RequestMetadata;
+pub use metadata::{RequestKind, RequestMetadata};
 
 use crate::trade::{Instrument, Order, OrderType, Price, Quantity};
 use serde::Serialize;

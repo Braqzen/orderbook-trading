@@ -67,7 +67,7 @@ impl Trader {
     }
 
     /// Creates an order and reserves the asset
-    pub fn prepare_place(
+    pub fn reserve(
         &mut self,
         client_id: Uuid,
         instrument: Instrument,
@@ -104,7 +104,7 @@ impl Trader {
     }
 
     /// Order has been sent so track it in open orders
-    pub fn confirm_place(&mut self, order: Order) {
+    pub fn commit(&mut self, order: Order) {
         self.metrics.record_order_submitted(&order);
         let instrument = order.instrument.clone();
         self.open_orders.insert(order.order_id, order);
@@ -112,8 +112,8 @@ impl Trader {
     }
 
     /// Something went wrong, attempt to release the reserved asset
-    pub fn rollback_place(&mut self, order: &Order) {
-        let Some((asset, amount)) = self.reserve(order) else {
+    pub fn rollback(&mut self, order: &Order) {
+        let Some((asset, amount)) = self.reserve_order(order) else {
             return;
         };
 
@@ -294,7 +294,7 @@ impl Trader {
     /// Translate an order into an instrument and quantity to reserve
     ///
     /// Does not alter state itself
-    fn reserve(&self, order: &Order) -> Option<(Asset, Quantity)> {
+    fn reserve_order(&self, order: &Order) -> Option<(Asset, Quantity)> {
         match order.side {
             OrderType::Buy => match order.size * order.price {
                 Ok(amount) => Some((order.instrument.quote().clone(), amount)),
@@ -314,7 +314,7 @@ impl Trader {
 
     /// Move the reserved funds to available for the specified order
     fn release_reserve(&mut self, client_id: Uuid, order: &Order) -> bool {
-        let Some((asset, amount)) = self.reserve(order) else {
+        let Some((asset, amount)) = self.reserve_order(order) else {
             return false;
         };
 

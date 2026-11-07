@@ -1,16 +1,10 @@
 mod book;
-mod connection;
 mod message;
-
-use crate::trade::Instrument;
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{RwLock, mpsc::Sender};
+mod registry;
 
 pub use book::OrderBook;
 pub use message::{
-    Cancelled, ExecutionReport, LoginRequest, LoginResponse, OrderRejection, Request,
-    RequestMetadata, Response, Trade,
+    Cancelled, ExecutionReport, LoginRequest, LoginResponse, OrderRejection, Request, RequestKind,
+    RequestMetadata, Response, SubmitOutcome, Trade,
 };
-
-// Only forward price updates to the engine if we are logged into that orderbook
-pub type ActiveOrderbooks = Arc<RwLock<HashMap<Instrument, Sender<RequestMetadata>>>>;
+pub use registry::OrderBookRegistry;

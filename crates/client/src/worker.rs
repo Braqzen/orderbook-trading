@@ -1,12 +1,19 @@
+//! Top-level client process: wires channels, builds the engine and market data gateway, and
+//! spawns one orderbook task per instrument. `run` supervises those tasks until shutdown, a core
+//! task failure, or every orderbook task has ended.
+
 use crate::{
-    api::{ActiveOrderbooks, ExecutionReport, MarketDataGateway, MarketPrice, OrderBook, WsUrl},
+    api::{
+        ExecutionReport, MarketDataGateway, MarketPrice, OrderBook, OrderBookRegistry,
+        SubmitOutcome, WsUrl,
+    },
     config::Config,
     metrics::ClientMetrics,
     randomiser::Randomiser,
     trade::{Engine, Trader},
     valkey::SequenceCache,
 };
-use eyre::Result;
+use eyre::{Result, ensure, eyre};
 use tokio::{
     select,
     signal::unix::{SignalKind, signal},
@@ -23,8 +30,8 @@ pub struct Worker {
     engine: Engine,
     /// Takes market price events and forwards to engine for processing
     market_data_gateway: MarketDataGateway,
-    /// Takes trade actions from engine to send to book and forward responses back to engine
-    orderbook: OrderBook,
+    /// Each orderbook is spawned as its own task to separate traffic from different instruments
+    orderbooks: Vec<OrderBook>,
 }
 
 impl Worker {
@@ -45,21 +52,28 @@ impl Worker {
         // Load the same config for all clients then randomise entries for simulation
         let randomiser = Randomiser::new(config)?;
         let (instruments, inventory) = randomiser.randomise()?;
+        ensure!(
+            !instruments.is_empty(),
+            "Must subscribe to at least one instrument with an orderbook"
+        );
 
-        // TODO: this has many bugs rn, need to improve in another issue
         // Price updates should only reach the engine if the client logged into the orderbook
-        let active_orderbooks: ActiveOrderbooks = Default::default();
+        let orderbook_registry = OrderBookRegistry::new();
 
         // Given new price events and client state decide on next trade action
         let trader = Trader::new(trade_limits, inventory, metrics.clone());
 
-        // Used to send price updates from the market data gateway to the engine for evaluation
+        // First, receive price updates from the market data gateway and send them to the engine for evaluation
         let (price_sender_channel, price_receiver_channel) = mpsc::channel::<MarketPrice>(128);
-        // Used to send orders from engine to orderbook api
-        let (order_sender_channel, order_receiver_channel) = mpsc::channel(128);
-        // Used to forward orderbook responses back to engine
+        // Later, when the orderbook receives a response from the service, forward it to engine for processing
         let (response_sender_channel, response_receiver_channel) =
             mpsc::channel::<ExecutionReport>(128);
+
+        // Used when the orderbook api confirms a place request reached the gateway websocket
+        // Internally we reserve an asset making it unusable and then attempt to send to orderbook which can fail
+        // Communicate the outcome of the send to undo reservation or mark as an open order
+        let (submit_outcome_sender_channel, submit_outcome_receiver_channel) =
+            mpsc::channel::<SubmitOutcome>(128);
 
         // First step of New Price Update Event -> Send to Engine for processing
         let market_data_gateway = MarketDataGateway::new(
@@ -67,7 +81,7 @@ impl Worker {
             market_data_gateway_url,
             instruments.clone(),
             price_sender_channel,
-            active_orderbooks.clone(),
+            orderbook_registry.clone(),
             metrics.clone(),
         );
         // Engine decides if it wants to trade, sends actions to orderbook
@@ -75,27 +89,35 @@ impl Worker {
             client_id,
             trader,
             price_receiver_channel,
-            order_sender_channel,
             response_receiver_channel,
+            submit_outcome_receiver_channel,
             metrics,
             sequences.clone(),
-            active_orderbooks.clone(),
+            orderbook_registry.clone(),
         );
-        // Lastly orderbook sends actions to orderbook service then forwards responses to engine
-        let orderbook = OrderBook::new(
-            client_id,
-            instruments,
-            orderbook_urls,
-            order_receiver_channel,
-            response_sender_channel,
-            sequences,
-            active_orderbooks,
-        )?;
+
+        // Lastly each orderbook sends actions for one instrument then forwards responses to engine
+        let mut orderbooks = Vec::with_capacity(instruments.len());
+        for instrument in instruments {
+            let url = orderbook_urls.get(&instrument).cloned().ok_or_else(|| {
+                eyre!("Missing orderbook URL for subscribed instrument {instrument}")
+            })?;
+
+            orderbooks.push(OrderBook::new(
+                client_id,
+                instrument,
+                url,
+                response_sender_channel.clone(),
+                submit_outcome_sender_channel.clone(),
+                sequences.clone(),
+                orderbook_registry.clone(),
+            ));
+        }
 
         Ok(Self {
             client_id,
             market_data_gateway,
-            orderbook,
+            orderbooks,
             engine,
         })
     }
@@ -106,26 +128,49 @@ impl Worker {
         // Handle running in a container and terminating the process with docker stop.
         let mut sigterm = signal(SignalKind::terminate())?;
 
-        let token = CancellationToken::new();
-        let gateway_token = token.child_token();
-        let book_token = token.child_token();
-        let engine_token = token.child_token();
+        // TODO: no graceful clean up, nuke it all, need to fix or inventory will corrupt
+        let shutdown_token = CancellationToken::new();
 
-        let mut tasks = JoinSet::new();
+        // Separate core tasks that must continue to function from independent books where any
+        // 1 book may fail and the rest of the system ought to continue to function
+        let mut core_tasks = JoinSet::new();
+        let mut orderbook_tasks = JoinSet::new();
 
-        tasks.spawn(self.engine.run(engine_token));
-        tasks.spawn(self.orderbook.run(book_token));
-        tasks.spawn(self.market_data_gateway.run(gateway_token));
-
-        select! {
-            Some(result) = tasks.join_next() => log_task_result(&self.client_id, result),
-            _ = sigint.recv() => info!(client = %self.client_id, "Received interrupt signal"),
-            _ = sigterm.recv() => info!(client = %self.client_id, "Received terminate signal"),
+        core_tasks.spawn(self.engine.run(shutdown_token.clone()));
+        core_tasks.spawn(self.market_data_gateway.run(shutdown_token.clone()));
+        for orderbook in self.orderbooks {
+            orderbook_tasks.spawn(orderbook.run(shutdown_token.child_token()));
         }
 
-        token.cancel();
+        loop {
+            select! {
+                Some(result) = core_tasks.join_next() => {
+                    log_task_result(&self.client_id, result);
+                    break;
+                }
+                Some(result) = orderbook_tasks.join_next(), if !orderbook_tasks.is_empty() => {
+                    log_task_result(&self.client_id, result);
+                    if orderbook_tasks.is_empty() {
+                        break;
+                    }
+                }
+                _ = sigint.recv() => {
+                    info!(client = %self.client_id, "Received interrupt signal");
+                    break;
+                }
+                _ = sigterm.recv() => {
+                    info!(client = %self.client_id, "Received terminate signal");
+                    break;
+                }
+            }
+        }
 
-        while let Some(result) = tasks.join_next().await {
+        shutdown_token.cancel();
+
+        while let Some(result) = core_tasks.join_next().await {
+            log_task_result(&self.client_id, result);
+        }
+        while let Some(result) = orderbook_tasks.join_next().await {
             log_task_result(&self.client_id, result);
         }
 

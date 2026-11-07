@@ -12,7 +12,7 @@ use crate::{
             response::{PriceUpdate, Response, SubscriptionResponse},
             subscription::Subscriptions,
         },
-        orderbook::ActiveOrderbooks,
+        orderbook::OrderBookRegistry,
     },
     metrics::ClientMetrics,
     trade::{Instrument, Price},
@@ -45,7 +45,7 @@ pub struct MarketDataGateway {
     /// Channel used to send price events to the engine
     price_sender_channel: Sender<MarketPrice>,
     /// Orderbooks that are currently logged in
-    active_orderbooks: ActiveOrderbooks,
+    orderbook_registry: OrderBookRegistry,
     /// Track metrics
     metrics: ClientMetrics,
 }
@@ -56,7 +56,7 @@ impl MarketDataGateway {
         url: WsUrl,
         instruments: Vec<Instrument>,
         price_sender_channel: Sender<MarketPrice>,
-        active_orderbooks: ActiveOrderbooks,
+        orderbook_registry: OrderBookRegistry,
         metrics: ClientMetrics,
     ) -> Self {
         Self {
@@ -64,7 +64,7 @@ impl MarketDataGateway {
             url,
             subscriptions: Subscriptions::new(instruments),
             price_sender_channel,
-            active_orderbooks,
+            orderbook_registry,
             metrics,
         }
     }
@@ -223,12 +223,7 @@ impl MarketDataGateway {
         };
 
         // Do not forward price updates deeper into the engine if client is not connected to orderbook
-        if !self
-            .active_orderbooks
-            .read()
-            .await
-            .contains_key(&instrument)
-        {
+        if !self.orderbook_registry.connected(&instrument).await {
             return PriceUpdateResult::Continue;
         }
 
